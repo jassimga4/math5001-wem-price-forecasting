@@ -1,0 +1,50 @@
+services:
+  lab:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: math5001-wem:latest
+    working_dir: /app
+    ports:
+      - "8888:8888"
+    volumes:
+      - .:/app
+    environment:
+      TZ: Australia/Perth
+      PYTHONUNBUFFERED: "1"
+      JUPYTER_TOKEN: math5001
+    command: >
+      jupyter lab
+      --ip=0.0.0.0
+      --port=8888
+      --no-browser
+      --allow-root
+      --IdentityProvider.token=math5001
+
+  shell:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: math5001-wem:latest
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      TZ: Australia/Perth
+      PYTHONUNBUFFERED: "1"
+    stdin_open: true
+    tty: true
+    command: bash
+
+  inspect:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: math5001-wem:latest
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      TZ: Australia/Perth
+      PYTHONUNBUFFERED: "1"
+    command: python scripts/inspect_panel.py

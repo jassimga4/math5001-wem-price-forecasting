@@ -1,0 +1,15 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.venv/
+.env
+
+# Raw AEMO CSVs are large; keep them local only
+raw/
+
+# Jupyter / Docker
+.streamlit/
+*.egg-info/

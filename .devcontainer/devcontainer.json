@@ -1,0 +1,7 @@
+{
+  "name": "MATH5001 WEM",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "shell",
+  "workspaceFolder": "/app",
+  "shutdownAction": "stopCompose"
+}
