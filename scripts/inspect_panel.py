@@ -10,11 +10,26 @@ import pandas as pd
 PANEL = Path("data/processed/wem_5min_panel.parquet")
 
 
+def _require_parquet_engine() -> None:
+    try:
+        import pyarrow  # noqa: F401
+    except ImportError as exc:
+        raise SystemExit(
+            "Parquet support is missing in this Python environment.\n"
+            "Use the project venv (includes pyarrow):\n"
+            "  cd \"/Users/jg/Documents/MATH5001 Project\"\n"
+            "  source .venv/bin/activate\n"
+            "  python scripts/inspect_panel.py\n"
+            "Or:  pip install pyarrow"
+        ) from exc
+
+
 def main() -> None:
     if not PANEL.exists():
         raise SystemExit(f"missing {PANEL}")
 
-    df = pd.read_parquet(PANEL)
+    _require_parquet_engine()
+    df = pd.read_parquet(PANEL, engine="pyarrow")
     print(f"file: {PANEL}")
     print(f"rows: {len(df):,}")
     print(f"cols: {len(df.columns)}")

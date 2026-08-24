@@ -61,9 +61,16 @@ docker compose run --rm shell python scripts/build_panel.py \
 
 ## Local Python (without Docker)
 
+The project venv already includes **pyarrow**, which pandas needs to read `.parquet` files. Use that interpreter (not system Python):
+
 ```bash
-python -m venv .venv
+cd "/Users/jg/Documents/MATH5001 Project"
 source .venv/bin/activate
-pip install -r requirements.txt
 python scripts/inspect_panel.py
+```
+
+If you still see `Missing optional dependency 'pyarrow'`, the notebook or terminal is using a different Python. Switch the kernel/interpreter to `.venv/bin/python`, or install the engine in the one you are using:
+
+```bash
+python -m pip install pyarrow
 ```
