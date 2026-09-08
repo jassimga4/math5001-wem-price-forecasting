@@ -5,13 +5,13 @@ Loads data/processed/wem_5min_panel.parquet, writes figures and a
 per-column feature-interpretation report under reports/eda/.
 
 Usage:
-    cd "/Users/jg/Documents/MATH5001 Project"
     source .venv/bin/activate
     python scripts/explore_panel.py
 """
 
 from __future__ import annotations
 
+import sys
 import warnings
 from pathlib import Path
 
@@ -27,8 +27,13 @@ from sklearn.feature_selection import mutual_info_regression
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-ROOT = Path(__file__).resolve().parents[1]
-PANEL = ROOT / "data" / "processed" / "wem_5min_panel.parquet"
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from scripts.paths import PROJECT_ROOT, panel_path
+
+ROOT = PROJECT_ROOT
 OUT = ROOT / "reports" / "eda"
 FIG = OUT / "figures"
 
@@ -244,18 +249,18 @@ def _require_parquet_engine() -> None:
         import pyarrow  # noqa: F401
     except ImportError as exc:
         raise SystemExit(
-            "Parquet support is missing. Activate the project venv:\n"
-            '  cd "/Users/jg/Documents/MATH5001 Project"\n'
+            "Parquet support is missing. Activate the project virtualenv:\n"
             "  source .venv/bin/activate\n"
             "  python scripts/explore_panel.py"
         ) from exc
 
 
 def load_panel() -> pd.DataFrame:
-    if not PANEL.exists():
-        raise SystemExit(f"missing {PANEL}")
+    panel = panel_path()
+    if not panel.exists():
+        raise SystemExit(f"missing {panel.as_posix()}")
     _require_parquet_engine()
-    df = pd.read_parquet(PANEL, engine="pyarrow")
+    df = pd.read_parquet(panel, engine="pyarrow")
     df["interval_end"] = pd.to_datetime(df["interval_end"])
     if "trading_interval_end" in df.columns:
         df["trading_interval_end"] = pd.to_datetime(df["trading_interval_end"])
@@ -686,7 +691,12 @@ def write_report(
     a("")
     a("## Panel overview")
     a("")
-    a(f"- File: `{PANEL.relative_to(ROOT)}`")
+    panel = panel_path()
+    try:
+        panel_rel = panel.relative_to(ROOT).as_posix()
+    except ValueError:
+        panel_rel = panel.as_posix()
+    a(f"- File: `{panel_rel}`")
     a(f"- Rows: **{len(df):,}**")
     a(f"- Columns: **{len(df.columns)}**")
     a(f"- Range: **{df['interval_end'].min()} → {df['interval_end'].max()}**")
@@ -829,7 +839,7 @@ def main() -> None:
     sns.set_theme(style="whitegrid", context="notebook")
     FIG.mkdir(parents=True, exist_ok=True)
 
-    print(f"loading {PANEL}")
+    print(f"loading {panel_path().as_posix()}")
     df = load_panel()
     print(f"rows={len(df):,}  cols={len(df.columns)}  {df['interval_end'].min()} → {df['interval_end'].max()}")
 

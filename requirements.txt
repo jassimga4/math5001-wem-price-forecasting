@@ -1,12 +1,21 @@
+# Direct project dependencies. Transitive packages are installed by pip.
+# Core data
 pandas>=2.2
 numpy>=1.26
 pyarrow>=14.0
-python-dateutil>=2.9
+
+# Modelling
 scikit-learn>=1.4
 lightgbm>=4.3
 mapie>=0.9
 statsmodels>=0.14
+shap>=0.46
+
+# Visualisation
 matplotlib>=3.8
 seaborn>=0.13
+
+# Notebooks / config
 jupyterlab>=4.2
 ipykernel>=6.29
+python-dotenv>=1.0

@@ -3,11 +3,16 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pandas as pd
 
-PANEL = Path("data/processed/wem_5min_panel.parquet")
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from scripts.paths import panel_path
 
 
 def _require_parquet_engine() -> None:
@@ -16,21 +21,21 @@ def _require_parquet_engine() -> None:
     except ImportError as exc:
         raise SystemExit(
             "Parquet support is missing in this Python environment.\n"
-            "Use the project venv (includes pyarrow):\n"
-            "  cd \"/Users/jg/Documents/MATH5001 Project\"\n"
+            "Use the project virtualenv (includes pyarrow):\n"
             "  source .venv/bin/activate\n"
             "  python scripts/inspect_panel.py\n"
-            "Or:  pip install pyarrow"
+            "Or:  python -m pip install pyarrow"
         ) from exc
 
 
 def main() -> None:
-    if not PANEL.exists():
-        raise SystemExit(f"missing {PANEL}")
+    panel = panel_path()
+    if not panel.exists():
+        raise SystemExit(f"missing {panel.as_posix()}")
 
     _require_parquet_engine()
-    df = pd.read_parquet(PANEL, engine="pyarrow")
-    print(f"file: {PANEL}")
+    df = pd.read_parquet(panel, engine="pyarrow")
+    print(f"file: {panel.as_posix()}")
     print(f"rows: {len(df):,}")
     print(f"cols: {len(df.columns)}")
     print("columns:")

@@ -12,8 +12,11 @@ Joined:
   - market schedule energy summed to system MW
 
 Usage (in Docker):
-    docker compose run --rm shell python scripts/build_panel.py --data-dir "/Users/jg/Desktop/Demand Forecasting AEMO/data"
+    docker compose run --rm shell python scripts/build_panel.py
     docker compose run --rm shell python scripts/build_panel.py --skip-scada
+
+RAW_DATA_DIR and PANEL_PATH are read from `.env` (POSIX paths). Override with
+--data-dir / --out if needed.
 """
 
 from __future__ import annotations
@@ -21,9 +24,16 @@ from __future__ import annotations
 import argparse
 import glob
 import logging
+import sys
 from pathlib import Path
 
 import pandas as pd
+
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from scripts.paths import as_posix_path, panel_path, raw_data_dir
 
 log = logging.getLogger("build_panel")
 
@@ -33,8 +43,8 @@ DMY = "%d/%m/%Y %H:%M:%S"
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--data-dir", type=Path, default=Path("raw"))
-    p.add_argument("--out", type=Path, default=Path("data/processed/wem_5min_panel.parquet"))
+    p.add_argument("--data-dir", type=Path, default=None)
+    p.add_argument("--out", type=Path, default=None)
     p.add_argument("--start", default="2023-10-01 08:00:00")
     p.add_argument("--end", default=None)
     p.add_argument("--skip-scada", action="store_true")
@@ -220,6 +230,8 @@ def add_calendar(df: pd.DataFrame) -> pd.DataFrame:
 
 def main() -> None:
     args = parse_args()
+    args.data_dir = raw_data_dir() if args.data_dir is None else as_posix_path(args.data_dir)
+    args.out = panel_path() if args.out is None else as_posix_path(args.out)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)-8s  %(message)s")
 
     start = pd.Timestamp(args.start)
