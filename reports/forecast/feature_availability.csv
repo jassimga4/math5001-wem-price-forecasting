@@ -1,0 +1,23 @@
+feature,timestamp_represented,publication_or_assumption,valid_at_origin,note
+mcp_lag_5min,t-5min,dispatch MCP published at interval end,yes,persistence
+mcp_lag_30min,t-30min,dispatch MCP published at interval end,yes,30-minute seasonal persistence
+mcp_lag_60min,t-60min,dispatch MCP published at interval end,yes,hour-ago price
+mcp_lag_1d,t-1day,dispatch MCP published at interval end,yes,daily seasonal persistence
+demand_lag_5min,t-5min,realised operational demand; no forecast vintage in the panel,yes,same-interval demand removed
+dpv_lag_5min,t-5min,realised estimated DPV; no forecast vintage in the panel,yes,same-interval DPV removed
+withdrawal_lag_5min,t-5min,realised operational withdrawal,yes,same-interval withdrawal removed
+cr_raise_lag_5min,t-5min,FCAS price published with the dispatch interval,yes,same-interval FCAS removed
+cr_lower_lag_5min,t-5min,FCAS price published with the dispatch interval,yes,same-interval FCAS removed
+reg_raise_lag_5min,t-5min,FCAS price published with the dispatch interval,yes,same-interval FCAS removed
+reg_lower_lag_5min,t-5min,FCAS price published with the dispatch interval,yes,same-interval FCAS removed
+rtp_last_complete,last trading interval ended by t-5min,RTP treated as known only when its trading interval has ended,yes,not rtp.shift(1)
+stem_price,target trading interval,"assumed day-ahead STEM, published before real-time dispatch","yes, assumption",not verified against an AEMO publication log
+stem_imbalance,target trading interval,STEM bid minus offer; same day-ahead assumption as stem_price,"yes, assumption",not verified against an AEMO publication log
+hour/dow/month,target interval clock,deterministic calendar of the target timestamp,yes,known before the origin
+operational_demand_mw,target interval,realised; not in the panel as a pre-dispatch forecast,no,excluded
+dpv_mw,target interval,realised estimate for the target interval,no,excluded
+scada_mw,target interval,realised facility SCADA,no,excluded; also collinear with lagged demand
+scheduled_energy_mw,target interval,vintage (forecast vs realised) not identified,no,excluded
+rtp,target trading interval,includes prices from the interval being forecast,no,excluded
+rocof,target interval,"about 99.97% zeros, not missing",no,excluded for near-constancy
+year,target year,2026 is outside the training window,not used,"regime shift, not a linear trend"

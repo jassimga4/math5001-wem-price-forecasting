@@ -12,7 +12,11 @@ data/processed/wem_5min_panel_sample.csv
 scripts/build_panel.py                  # rebuild the panel from raw AEMO CSVs
 scripts/inspect_panel.py                # print panel shape / coverage
 scripts/paths.py                        # POSIX path + .env helpers
-notebooks/                              # analysis notebooks
+notebooks/00_load_panel.ipynb            # load the processed panel
+notebooks/01_eda_correlation.ipynb       # descriptive EDA (not used to tune the test set)
+notebooks/02_baseline_models.ipynb       # ex-ante 5-minute baselines
+notebooks/03_final_point_model.ipynb     # LightGBM fit on the training window only
+notebooks/04_sliding_conformal.ipynb     # sliding-window conformal intervals
 .env.example                            # copy to .env
 Dockerfile
 docker-compose.yml
@@ -85,7 +89,26 @@ python -m pip install -r requirements.txt
 python scripts/inspect_panel.py
 ```
 
-The project virtualenv includes **pyarrow**, which pandas needs to read `.parquet` files. Point the notebook kernel at `.venv/bin/python`.
+The project virtualenv includes **pyarrow**, which pandas needs to read `.parquet` files. Point the notebook kernel at `.venv/bin/python` (or `.venv\Scripts\python.exe` on Windows).
+
+## Forecast experiment
+
+The forecast is 5-minute-ahead MCP. The origin is the end of the previous dispatch interval. `scripts/forecast_design.py` reindexes to a complete 5-minute grid before lagging, and it does not use same-interval demand, DPV, SCADA, RTP, or FCAS.
+
+Frozen periods:
+
+| Split | End |
+| --- | --- |
+| Train | 2025-09-30 23:55 |
+| Calibration | 2026-03-31 23:55 |
+| Test | after the calibration end, untouched by tuning |
+
+```bash
+python -m unittest tests/test_forecast_design.py
+python scripts/experiment.py
+```
+
+Tables are written to `reports/forecast/`. Hyperparameters and the conformal window are chosen on pre-test data only. The LightGBM forecast is the 5-minute lag plus a price change fit under MAE. Conformal coverage, width, pinball and CRPS are reported for the test period and split by month and by tails defined from training quantiles of MCP. Contemporaneous STEM is an explicit day-ahead assumption, not a verified publication timestamp.
 
 If you still see `Missing optional dependency 'pyarrow'`, the notebook or terminal is using a different Python:
 

@@ -1,0 +1,44 @@
+{
+  "horizon": "5min",
+  "origin": "interval_end minus 5 minutes",
+  "train_end": "2025-09-30 23:55:00",
+  "calibration_end": "2026-03-31 23:55:00",
+  "test_start": "2026-04-01 00:00:00",
+  "test_end": "2026-08-18 07:55:00",
+  "n_train": 210105,
+  "n_calibration": 52397,
+  "n_test": 40127,
+  "n_ready": 302629,
+  "ridge_alpha": 0.1,
+  "ridge_inner_mae": 10.92733258837253,
+  "lgbm_params": {
+    "learning_rate": 0.1,
+    "num_leaves": 63,
+    "min_child_samples": 400
+  },
+  "lgbm_objective": "regression_l1",
+  "lgbm_target": "mcp_minus_lag_5min",
+  "lgbm_inner_mae": 10.007418101598473,
+  "lgbm_persistence_inner_mae": 10.79204899777283,
+  "lgbm_inner_skill_vs_persistence": 0.07270453426742995,
+  "spike_cut_train_p95": 170.31799999999987,
+  "floor_cut_train_p05": -54.19,
+  "mae_diff_lightgbm_minus_persistence": {
+    "mae_diff": 0.007930743572885495,
+    "boot_p05": -0.04043361770725544,
+    "boot_p95": 0.06995720907174861,
+    "block": 288,
+    "n_boot": 400
+  },
+  "conformal_primary_method": "absolute",
+  "conformal_primary_window_steps": 2016,
+  "window_candidates": {
+    "2d": 576,
+    "7d": 2016,
+    "14d": 4032,
+    "30d": 8640
+  },
+  "note": "Window choice and hyperparameters used only pre-test data. STEM contemporaneous use is an assumption.",
+  "max_ready_gap_minutes": 20.0,
+  "share_ready_gaps_over_5min": 0.0001354798630662067
+}

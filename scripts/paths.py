@@ -46,8 +46,9 @@ def as_posix_path(value: str | os.PathLike[str], *, base: Path | None = None) ->
     text = os.fspath(value).replace("\\", "/").strip()
     if not text:
         raise ValueError("path is empty")
-    if text.startswith("/"):
-        return Path(text)
+    candidate = Path(text)
+    if candidate.is_absolute():
+        return candidate
     parts = [part for part in text.split("/") if part and part != "."]
     return (base or PROJECT_ROOT).joinpath(*parts)
 

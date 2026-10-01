@@ -257,7 +257,14 @@ def main() -> None:
     panel = panel.loc[panel["interval_end"] >= start]
     if end is not None:
         panel = panel.loc[panel["interval_end"] <= end]
-    panel = panel.sort_values("interval_end").reset_index(drop=True)
+    panel = panel.sort_values("interval_end").drop_duplicates("interval_end", keep="last")
+    panel = panel.set_index("interval_end")
+    full_index = pd.date_range(panel.index.min(), panel.index.max(), freq="5min")
+    inserted = int(len(full_index.difference(panel.index)))
+    panel = panel.reindex(full_index)
+    panel.index.name = "interval_end"
+    panel = panel.reset_index()
+    log.info("reindexed to complete 5-min grid; inserted %s missing slots before lags", f"{inserted:,}")
 
     panel["residual_demand_mw"] = panel["operational_demand_mw"] - panel["dpv_mw"]
     panel["mcp_lag1"] = panel["mcp"].shift(1)
