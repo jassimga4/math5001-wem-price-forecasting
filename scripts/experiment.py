@@ -355,6 +355,17 @@ def main() -> None:
     print("calibrating conformal windows", flush=True)
     conformal = run_conformal(point)
     save_results(ready, point, conformal)
+    print("fitting qra on calibration forecasts", flush=True)
+    from scripts.qra import run_qra_comparison, write_qra_tables
+
+    qra = run_qra_comparison(
+        point,
+        primary_method=conformal["primary_method"],
+        primary_window=conformal["primary_window"],
+        frozen_source="selected on calibration in this run",
+        lightgbm_source="refit on the training window in this run",
+    )
+    write_qra_tables(qra)
     print(point["point"].to_string(index=False))
     print(conformal["selection"].to_string(index=False))
     print(conformal["test"].to_string(index=False))

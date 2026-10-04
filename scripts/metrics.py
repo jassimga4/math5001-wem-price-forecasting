@@ -89,6 +89,29 @@ def crps_from_residual_samples(residual_samples: np.ndarray, y, yhat) -> np.ndar
     return absolute - pair
 
 
+def crps_from_quantiles(y, quantiles, levels) -> np.ndarray:
+    """Trapezoidal integral of the quantile score between the first and last level.
+
+    CRPS equals the integral from 0 to 1 of twice the pinball loss. This returns
+    that integral only on the span of `levels`, which must be strictly increasing
+    and inside (0, 1). Tails outside the first and last level are not included.
+    """
+    y = np.asarray(y, dtype=float)
+    grid = np.asarray(quantiles, dtype=float)
+    tau = np.asarray(levels, dtype=float)
+    if grid.ndim != 2:
+        raise ValueError("quantiles must be a row per origin")
+    if grid.shape[0] != len(y) or grid.shape[1] != len(tau):
+        raise ValueError("quantile grid does not match y and levels")
+    if len(tau) < 2 or np.any(np.diff(tau) <= 0) or np.any(tau <= 0) or np.any(tau >= 1):
+        raise ValueError("levels must be strictly increasing and inside (0, 1)")
+    error = y[:, None] - grid
+    pinball = np.maximum(tau * error, (tau - 1.0) * error)
+    score = 2.0 * pinball
+    pieces = 0.5 * (score[:, :-1] + score[:, 1:]) * np.diff(tau)
+    return pieces.sum(axis=1)
+
+
 def block_bootstrap_mae_diff(y, yhat_a, yhat_b, block: int = 288, n_boot: int = 400, seed: int = 42) -> dict[str, float]:
     """Moving-block bootstrap interval for MAE(a) - MAE(b). Negative means a is better."""
     y = np.asarray(y, dtype=float)

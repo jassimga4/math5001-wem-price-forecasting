@@ -12,11 +12,19 @@ data/processed/wem_5min_panel_sample.csv
 scripts/build_panel.py                  # rebuild the panel from raw AEMO CSVs
 scripts/inspect_panel.py                # print panel shape / coverage
 scripts/paths.py                        # POSIX path + .env helpers
+scripts/forecast_design.py              # ex-ante 5-minute design and frozen splits
+scripts/point_models.py                 # persistence, ridge, and LightGBM
+scripts/conformal.py                    # sliding-window and fixed split conformal intervals
+scripts/qra.py                          # quantile regression averaging comparison
+scripts/experiment.py                   # fit point models, conformal tables, and QRA
+scripts/metrics.py                      # MAE, pinball, interval scores, and CRPS
 notebooks/00_load_panel.ipynb            # load the processed panel
 notebooks/01_eda_correlation.ipynb       # descriptive EDA (not used to tune the test set)
 notebooks/02_baseline_models.ipynb       # ex-ante 5-minute baselines
 notebooks/03_final_point_model.ipynb     # LightGBM fit on the training window only
 notebooks/04_sliding_conformal.ipynb     # sliding-window conformal intervals
+models/lgbm_5min_ahead.joblib            # LightGBM saved by the experiment
+reports/forecast/                        # point, conformal, and QRA tables
 .env.example                            # copy to .env
 Dockerfile
 docker-compose.yml
@@ -104,11 +112,15 @@ Frozen periods:
 | Test | after the calibration end, untouched by tuning |
 
 ```bash
-python -m unittest tests/test_forecast_design.py
+python -m unittest tests/test_forecast_design.py tests/test_point_models.py tests/test_conformal.py tests/test_qra.py
 python scripts/experiment.py
 ```
 
 Tables are written to `reports/forecast/`. Hyperparameters and the conformal window are chosen on pre-test data only. The LightGBM forecast is the 5-minute lag plus a price change fit under MAE. Conformal coverage, width, pinball and CRPS are reported for the test period and split by month and by tails defined from training quantiles of MCP. Contemporaneous STEM is an explicit day-ahead assumption, not a verified publication timestamp.
+
+Quantile regression averaging is a comparison, not a replacement for the absolute-residual conformal intervals. `scripts/qra.py` regresses calibration MCP on the 5-minute, 30-minute and 1-day persistence forecasts, the ridge forecast, and the LightGBM forecast. Those are the same origins and the same 5-minute horizon as the conformal experiment. The fit does not see the test set. Test scores are written to `reports/forecast/qra_test.csv`, `qra_by_month.csv`, `qra_regime.csv`, and `qra_crps.csv`. `crps_empirical` is the sliding residual-sample CRPS and is only filled for the frozen conformal rows. `crps_quantile_integral` uses the same quantile grid for QRA and for the frozen conformal residual window; it is not the same estimator as `crps_empirical`.
+
+`python scripts/qra.py` does not refit LightGBM. It reloads `models/lgbm_5min_ahead.joblib`, refits ridge on the training window, recomputes persistence from lags, and reads the frozen conformal method and window from `reports/forecast/experiment_meta.json` without choosing them again. `python scripts/experiment.py` refits the point models, selects the conformal window on calibration, and then writes the same QRA tables.
 
 If you still see `Missing optional dependency 'pyarrow'`, the notebook or terminal is using a different Python:
 
