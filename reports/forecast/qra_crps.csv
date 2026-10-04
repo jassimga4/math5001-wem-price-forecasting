@@ -1,0 +1,4 @@
+method,base,crps_empirical,crps_quantile_integral
+qra,qra,,3.9208118313506555
+absolute,lightgbm,4.0325098343314885,4.003859336261143
+absolute,persistence_5min,4.175883828969476,4.144787910297306

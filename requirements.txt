@@ -7,7 +7,6 @@ pyarrow>=14.0
 # Modelling
 scikit-learn>=1.4
 lightgbm>=4.3
-mapie>=0.9
 statsmodels>=0.14
 shap>=0.46
 
