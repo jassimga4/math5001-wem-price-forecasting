@@ -1,0 +1,88 @@
+{
+  "purpose": "QRA variants with recent calibration windows; selection on calibration only",
+  "combiners": {
+    "qra": "Nowotarski & Weron (2015): linear quantile regression of MCP on the member point forecasts, one fit per level",
+    "qrm": "Marcjasz, Uniejewski & Weron (2020): quantile regression of MCP on the mean of the member point forecasts",
+    "qave": "Quantile averaging (Q-Ave, Marcjasz et al. 2020): each member's quantiles (univariate QR on a point forecast, or native LightGBM quantiles) are sorted and averaged level by level",
+    "lightgbm_quantile": "LightGBM quantile objective, one model per level, fit on the training window only with the frozen point-model hyperparameters; predicts the 5-minute change and adds the 5-minute lag"
+  },
+  "not_implemented": "Probability averaging (F-Ave) was not implemented: the member quantile grids stop at 0.01 and 0.99, so the mixture CDF tails would need an extra extrapolation assumption.",
+  "subsets": {
+    "all5": [
+      "persistence_5min",
+      "persistence_30min",
+      "persistence_1d",
+      "ridge",
+      "lightgbm"
+    ],
+    "lgbm_ridge_p5": [
+      "lightgbm",
+      "ridge",
+      "persistence_5min"
+    ],
+    "lgbm_p5": [
+      "lightgbm",
+      "persistence_5min"
+    ],
+    "lgbm": [
+      "lightgbm"
+    ]
+  },
+  "windows_days": {
+    "28d": 28,
+    "56d": 56,
+    "91d": 91,
+    "all": null
+  },
+  "levels": [
+    0.01,
+    0.025,
+    0.05,
+    0.1,
+    0.15,
+    0.2,
+    0.25,
+    0.3,
+    0.35,
+    0.4,
+    0.45,
+    0.5,
+    0.55,
+    0.6,
+    0.65,
+    0.7,
+    0.75,
+    0.8,
+    0.85,
+    0.9,
+    0.95,
+    0.975,
+    0.99
+  ],
+  "inner_fit_end": "2026-02-28 23:55:00",
+  "inner_validation": "2026-03-01 00:00:00 to 2026-03-31 23:55:00",
+  "n_inner_validation": 8919,
+  "final_fit_end": "2026-03-31 23:55:00",
+  "test_period": "2026-04-01 00:00:00 to 2026-08-18 07:55:00",
+  "n_test": 40127,
+  "selection_rule": "On the inner calibration month only: among candidate variants with 90% coverage in [0.88, 0.92], choose the narrowest mean 90% width; ties by lower quantile-integral CRPS. If none is in the band, nothing is selected and the original QRA stays. The selected spec is refit with the same window length ending at the calibration end and scored once on test. Test scores of the other variants are reported but not used.",
+  "selected_variant": "qra:lgbm_p5@28d",
+  "n_variants_in_band": 7,
+  "sensitivity_lowest_crps_in_band": "qra:lgbm_ridge_p5@28d",
+  "original_qra_variant": "qra:all5@all",
+  "primary_conformal_method": "absolute",
+  "primary_conformal_window_steps": 2016,
+  "rearrangement": "per-row sort of the predicted quantiles (does not use the outcome)",
+  "crps_quantile_integral": "Trapezoidal integral of twice the pinball loss over the level grid (scripts.metrics.crps_from_quantiles); same estimator as qra_crps.csv",
+  "conformal_reference_note": "Inner month: sliding window over calibration residuals only (the window can extend into March as the month progresses, exactly as the online interval would). Test: as in conformal_test.csv.",
+  "test_outcomes_used_for_fit_or_selection": false,
+  "lightgbm_quantile_params": {
+    "learning_rate": 0.1,
+    "num_leaves": 63,
+    "min_child_samples": 400,
+    "n_estimators": 250
+  },
+  "lightgbm_quantile_source": "fit on the training window in this run; not saved",
+  "test_observation": "The calibration-selected variant qra:lgbm_p5@28d has 90% coverage 0.868 on the untouched test period (below the [0.88, 0.92] selection band) with mean width 16.71 versus 26.08 for the original qra:all5@all (coverage 0.930) and 20.89 for frozen LightGBM conformal (coverage 0.898). Test scores were not used to reselect or retune. lightgbm_quantile:native@none has the lowest test quantile-integral CRPS among reported variants but was outside the coverage band on the inner validation month.",
+  "n_candidates": 45
+}
