@@ -1,0 +1,15 @@
+{
+  "rule": "abs_30min_move_q90",
+  "threshold": 32.483,
+  "feature": "move_30",
+  "train_spike": 170.318,
+  "train_floor": -54.19,
+  "selection": "late calibration tail MAE, subject to late MAE within 1% of LightGBM",
+  "window_steps": 2016,
+  "method": "absolute",
+  "alpha": 0.1,
+  "test_switch_share": 0.07635756473197598,
+  "n_test": 40127,
+  "n_test_tail": 3206,
+  "note": "Gate chosen on calibration only. Not an onset model. See docs/spike_forecast_next_steps.md."
+}
