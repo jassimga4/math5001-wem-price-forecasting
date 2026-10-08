@@ -35,7 +35,9 @@ from scripts.external_features import (  # noqa: E402
     build_external,
 )
 from scripts.forecast_design import INNER_VAL_START, TREE_FEATURES, slice_split, split_mask  # noqa: E402
+from scripts.forecast_design import TRAIN_END  # noqa: E402
 from scripts.metrics import crps_from_residual_samples  # noqa: E402
+from scripts.price_path import PATH_FEATURES, near_band, price_path_features  # noqa: E402
 from scripts.regime_switch import WINDOW, forecasts, load, mask_for, switched  # noqa: E402
 
 OUT = ROOT / "reports" / "forecast"
@@ -51,7 +53,10 @@ FEATURE_SETS = {
     "hurdle_weather_predispatch": PANEL + EXTERNAL_WEATHER + EXTERNAL_PREDISPATCH,  # even-hour runs (stage 1)
     "hurdle_weather_predispatch_all": PANEL + EXTERNAL_WEATHER + EXTERNAL_PREDISPATCH_ALL,  # hourly runs + revisions
     "hurdle_weather_predispatch_half": PANEL + EXTERNAL_WEATHER + EXTERNAL_PREDISPATCH_HALF,  # half-hourly + 30/60 min revisions
+    "hurdle_panel_path": PANEL + PATH_FEATURES,  # stage A: recent price-path summaries
 }
+# Classifier per row; every row not listed uses LightGBM (stages 1 to 1c).
+CLASSIFIER = {}
 EXTERNAL_PREFIXES = ("pd_", "pda_", "pdh_", "wx_")
 CLF_PARAMS = dict(
     n_estimators=1500, learning_rate=0.03, num_leaves=31, min_child_samples=200, subsample=0.8,
@@ -89,6 +94,10 @@ def assemble():
     grid_tail = ((grid >= spike) | (grid <= floor)).astype(float).where(grid.notna())
     recent = pd.concat([grid_tail.shift(k) for k in range(1, 13)], axis=1).max(axis=1, skipna=True)
     frame["fresh_onset"] = frame["onset"] & recent.reindex(frame.index).eq(0).to_numpy()
+    # Stage A: price-path summaries from prices realised by the origin; thresholds from train only.
+    near_up, near_down = near_band(ready.loc[ready.index <= TRAIN_END, "mcp"])
+    frame = frame.join(price_path_features(ready["mcp"], frame.index, near_up, near_down))
+    frame.attrs["near_band"] = {"near_up_train_q90": near_up, "near_down_train_q10": near_down}
     return frame, rule, spike, floor
 
 
@@ -116,10 +125,14 @@ def check_attached(rows, features, minimum=0.9):
     return share
 
 
-def fit_classifier(train, features, label):
+def fit_classifier(train, features, label, kind="lightgbm"):
     rows = train.loc[train["eligible"] & (train.index >= FIT_START)]
     check_attached(rows, features)
     fit, val = rows.loc[rows.index < INNER_VAL_START], rows.loc[rows.index >= INNER_VAL_START]
+    if kind != "lightgbm":
+        model, best = fit_other_classifier(kind, _xy(fit, features), fit[label].astype(int), _xy(val, features),
+                                           val[label].astype(int), _xy(rows, features), rows[label].astype(int))
+        return model, best, int(rows[label].sum()), int(len(rows))
     probe = LGBMClassifier(**CLF_PARAMS)
     probe.fit(_xy(fit, features), fit[label].astype(int), eval_X=(_xy(val, features),), eval_y=(val[label].astype(int),),
               eval_metric="binary_logloss", callbacks=[early_stopping(200, verbose=False)])
@@ -127,6 +140,74 @@ def fit_classifier(train, features, label):
     model = LGBMClassifier(**{**CLF_PARAMS, "n_estimators": best})
     model.fit(_xy(rows, features), rows[label].astype(int))
     return model, best, int(rows[label].sum()), int(len(rows))
+
+
+XGB_PARAMS = dict(
+    n_estimators=1500, learning_rate=0.03, max_depth=6, min_child_weight=1.0, subsample=0.8, colsample_bytree=0.8,
+    reg_lambda=1.0, tree_method="hist", eval_metric="logloss", random_state=7, n_jobs=8,
+)
+HGB_ITERS = [50, 100, 200, 400, 800]
+LOGIT_C = [0.01, 0.1, 1.0]
+
+
+def fit_other_classifier(kind, x_fit, y_fit, x_val, y_val, x_all, y_all):
+    """Stage B classifiers. Capacity is chosen on the inner validation window
+    (2025-07-01 to 2025-09-30, inside train) by log loss, then refitted on all
+    training rows, as for LightGBM. Returns (model, chosen setting)."""
+    from sklearn.metrics import log_loss
+
+    if kind == "xgboost":
+        from xgboost import XGBClassifier
+
+        probe = XGBClassifier(**XGB_PARAMS, early_stopping_rounds=200)
+        probe.fit(x_fit, y_fit, eval_set=[(x_val, y_val)], verbose=False)
+        best = max(int(probe.best_iteration) + 1, 50)
+        model = XGBClassifier(**{**XGB_PARAMS, "n_estimators": best})
+        model.fit(x_all, y_all, verbose=False)
+        return model, best
+    if kind == "hist_gb":
+        from sklearn.ensemble import HistGradientBoostingClassifier
+
+        def make(n):
+            return HistGradientBoostingClassifier(learning_rate=0.05, max_leaf_nodes=31, min_samples_leaf=200,
+                                                  l2_regularization=1.0, max_iter=n, early_stopping=False, random_state=7)
+
+        probe, scores = make(HGB_ITERS[0]), {}
+        probe.set_params(warm_start=True)
+        for n in HGB_ITERS:
+            probe.set_params(max_iter=n)
+            probe.fit(x_fit, y_fit)
+            scores[n] = log_loss(y_val, probe.predict_proba(x_val)[:, 1], labels=[0, 1])
+        best = min(scores, key=scores.get)
+        model = make(best)
+        model.fit(x_all, y_all)
+        return model, best
+    if kind == "logistic":
+        from sklearn.impute import SimpleImputer
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import StandardScaler
+
+        def make(c):
+            return make_pipeline(SimpleImputer(strategy="median", add_indicator=True), StandardScaler(),
+                                 LogisticRegression(C=c, max_iter=5000))
+
+        scores = {}
+        for c in LOGIT_C:
+            scores[c] = log_loss(y_val, make(c).fit(x_fit, y_fit).predict_proba(x_val)[:, 1], labels=[0, 1])
+        best = min(scores, key=scores.get)
+        return make(best).fit(x_all, y_all), best
+    raise ValueError(kind)
+
+
+def classifier_gain(model, features):
+    """Total split gain per feature for tree boosters; NaN for models without one."""
+    if isinstance(model, LGBMClassifier):
+        return pd.Series(model.booster_.feature_importance("gain"), index=features, dtype=float)
+    if type(model).__name__ == "XGBClassifier":
+        score = model.get_booster().get_score(importance_type="total_gain")
+        return pd.Series({f: float(score.get(f, 0.0)) for f in features})
+    return pd.Series(np.nan, index=features)
 
 
 def fit_size(train, features, label):
@@ -344,8 +425,9 @@ def run(frame, spike, floor):
             per_row[(name, split)] = (yhat, crps)
 
     for set_name, features in FEATURE_SETS.items():
-        clf_up, it_up, pos_up, n_up = fit_classifier(train, features, "up")
-        clf_dn, it_dn, pos_dn, n_dn = fit_classifier(train, features, "down")
+        kind = CLASSIFIER.get(set_name, "lightgbm")
+        clf_up, it_up, pos_up, n_up = fit_classifier(train, features, "up", kind)
+        clf_dn, it_dn, pos_dn, n_dn = fit_classifier(train, features, "down", kind)
         size_up, n_size_up = fit_size(train, features, "up")
         size_dn, n_size_dn = fit_size(train, features, "down")
         for block in (cal, test):
@@ -416,6 +498,7 @@ def run(frame, spike, floor):
                                                  "p_down": block["p_down"], "onset": block["onset"]}, index=block.index)
         model_meta[set_name] = {
             "features": features,
+            "classifier": kind,
             "classifier_up": {"iterations": it_up, "positives": pos_up, "rows": n_up},
             "classifier_down": {"iterations": it_dn, "positives": pos_dn, "rows": n_dn},
             "size_rows": {"up": n_size_up, "down": n_size_dn},
@@ -431,9 +514,9 @@ def run(frame, spike, floor):
         grid.insert(0, "model", set_name)
         mgrid.insert(0, "model", set_name)
         selections.append((grid, mgrid))
-        importance = pd.Series(clf_up.booster_.feature_importance("gain"), index=features).sort_values(ascending=False)
+        importance = classifier_gain(clf_up, features).sort_values(ascending=False)
         model_meta[set_name]["top_up_features_by_gain"] = importance.head(15).round(1).to_dict()
-        importance_dn = pd.Series(clf_dn.booster_.feature_importance("gain"), index=features).sort_values(ascending=False)
+        importance_dn = classifier_gain(clf_dn, features).sort_values(ascending=False)
         model_meta[set_name]["top_down_features_by_gain"] = importance_dn.head(15).round(1).to_dict()
         for side, imp in (("up", importance), ("down", importance_dn)):
             gains.append(pd.DataFrame({"model": set_name, "classifier": side, "feature": imp.index, "gain": imp.to_numpy(),
@@ -455,6 +538,7 @@ def main():
         "fit_window": f"{FIT_START.date()} to train end; early stopping on {INNER_VAL_START.date()} onwards",
         "train_spike": spike,
         "train_floor": floor,
+        "price_path_near_band": frame.attrs.get("near_band"),
         "regime_rule": rule[0],
         "selection": "calibration rows after the first conformal window; point: min tail MAE with overall MAE within 1% of the regime switch; mixture: min tail CRPS with overall CRPS within 1% of the regime switch; detection: max F1",
         "models": meta,
