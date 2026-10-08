@@ -43,6 +43,7 @@ WEATHER_LAG = pd.Timedelta(hours=12)  # value valid at V is usable from V - 12 h
 PD_LABEL_LAG = pd.Timedelta(minutes=40)  # public file ~35 min after the run label
 PD_ISSUE_LAG = pd.Timedelta(minutes=25)
 PD_MAX_AGE = pd.Timedelta(hours=4)  # older runs are treated as missing (download gaps)
+PD_REVISION_MAX_GAP = pd.Timedelta(hours=2)  # revisions only between runs at most 2 h apart
 WIND_SITES = ("geraldton", "badgingarra", "merredin", "albany")
 PD_FIELDS = {
     "prices.energy": "price",
@@ -214,6 +215,87 @@ def predispatch_features(targets: pd.DatetimeIndex, runs: pd.DataFrame, realised
     return out
 
 
+def even_hour_runs(runs: pd.DataFrame) -> pd.DataFrame:
+    """The pass-1 subset (runs labelled at even hours), as used by the stage-1 ``pd_`` features."""
+    label = runs["run_label"]
+    return runs.loc[(label.dt.minute == 0) & (label.dt.hour % 2 == 0)]
+
+
+def predispatch_features_all(targets: pd.DatetimeIndex, runs: pd.DataFrame, realised: pd.DataFrame) -> pd.DataFrame:
+    """``pda_`` features from every hourly run, plus revisions between consecutive runs.
+
+    L is the latest run with ``available_at <= origin`` (at most 4 h old). P is
+    the run labelled just before L; it is used only if it too was available by
+    the origin and is at most 2 h older than L. Revisions compare L and P for
+    the half hour containing T. The within-run change compares L's forecast for
+    that half hour with its forecast one hour earlier, or with L's first
+    interval if that is later. ``pda_run_age_min`` is kept for coverage reports
+    only and is not a model feature.
+    """
+    targets = pd.DatetimeIndex(targets).astype("datetime64[ns]")
+    out = pd.DataFrame(index=targets)
+    if runs.empty:
+        return out
+    meta = runs.groupby("run_label", as_index=False)["available_at"].max().sort_values("run_label")
+    meta["prev_label"] = meta["run_label"].shift(1)
+    meta["prev_available_at"] = meta["available_at"].shift(1)
+    origins = pd.DataFrame({"target": targets, "origin": targets - HORIZON}).sort_values("origin")
+    chosen = pd.merge_asof(origins, meta.sort_values("available_at"), left_on="origin", right_on="available_at",
+                           direction="backward")
+    chosen = chosen.set_index("target").reindex(targets)
+    stale = (chosen["origin"] - chosen["run_label"]) > PD_MAX_AGE
+    chosen.loc[stale, ["run_label", "available_at", "prev_label", "prev_available_at"]] = pd.NaT
+    prev_bad = (chosen["prev_available_at"] > chosen["origin"]) | (
+        (chosen["run_label"] - chosen["prev_label"]) > PD_REVISION_MAX_GAP)
+    chosen.loc[prev_bad.fillna(True), ["prev_label", "prev_available_at"]] = pd.NaT
+    slot = targets.floor("30min")
+    wide = runs.set_index(["run_label", "interval"])
+    fields = list(PD_FIELDS.values())
+
+    def lookup(labels: pd.Series, when) -> pd.DataFrame:
+        key = pd.MultiIndex.from_arrays([labels, pd.DatetimeIndex(when)])
+        got = wide.reindex(key)[fields]
+        got.index = targets
+        return got
+
+    label = chosen["run_label"]
+    now, nxt = lookup(label, slot), lookup(label, slot + pd.Timedelta(minutes=30))
+    ahead = [lookup(label, slot + pd.Timedelta(minutes=30 * k))["price"] for k in range(0, 5)]
+    earlier_when = np.maximum((slot - pd.Timedelta(hours=1)).to_numpy(), label.to_numpy())
+    earlier = lookup(label, earlier_when)
+    prev = lookup(chosen["prev_label"], slot)
+    prev_ahead = [lookup(chosen["prev_label"], slot + pd.Timedelta(minutes=30 * k))["price"] for k in range(0, 5)]
+    out["pda_price_t"] = now["price"]
+    out["pda_price_next"] = nxt["price"]
+    out["pda_price_max2h"] = pd.concat(ahead, axis=1).max(axis=1)
+    out["pda_price_minus_last"] = now["price"] - realised["mcp_lag_5min"]
+    out["pda_energy_req_t"] = now["energy_req"]
+    out["pda_energy_req_minus_last_demand"] = now["energy_req"] - realised["demand_lag_5min"]
+    out["pda_energy_req_ramp30"] = nxt["energy_req"] - now["energy_req"]
+    out["pda_headroom"] = now["in_service_cap"] - now["energy_req"]
+    out["pda_available_cap"] = now["available_cap"]
+    out["pda_cont_raise_margin"] = now["cont_raise_avail"] - now["cont_raise_req"]
+    out["pda_reg_raise_price"] = now["reg_raise_price"]
+    out["pda_cont_raise_price"] = now["cont_raise_price"]
+    out["pda_energy_deficit"] = now["energy_deficit"]
+    out["pda_price_change_1h"] = now["price"] - earlier["price"]
+    out["pda_energy_req_change_1h"] = now["energy_req"] - earlier["energy_req"]
+    out["pda_rev_price_t"] = now["price"] - prev["price"]
+    out["pda_rev_price_max2h"] = out["pda_price_max2h"] - pd.concat(prev_ahead, axis=1).max(axis=1, skipna=False)
+    out["pda_rev_energy_req_t"] = now["energy_req"] - prev["energy_req"]
+    out["pda_rev_headroom_t"] = out["pda_headroom"] - (prev["in_service_cap"] - prev["energy_req"])
+    out["pda_run_age_min"] = (chosen["origin"] - label).dt.total_seconds() / 60.0
+    out["pda_available_at"] = chosen["available_at"]
+    out["pda_prev_available_at"] = chosen["prev_available_at"]
+    no_prev = prev["price"].isna()
+    out.loc[no_prev, "pda_prev_available_at"] = pd.NaT
+    out.loc[no_prev, EXTERNAL_REVISION] = np.nan
+    missing = now["price"].isna()
+    out.loc[missing, ["pda_available_at", "pda_prev_available_at"]] = pd.NaT
+    out.loc[missing, [*EXTERNAL_PREDISPATCH_ALL, "pda_run_age_min"]] = np.nan
+    return out
+
+
 # --------------------------------------------------------------------------- table
 
 
@@ -227,52 +309,73 @@ EXTERNAL_PREDISPATCH = [
     "pd_energy_req_minus_last_demand", "pd_energy_req_ramp30", "pd_headroom", "pd_available_cap",
     "pd_cont_raise_margin", "pd_reg_raise_price", "pd_cont_raise_price", "pd_energy_deficit", "pd_run_age_min",
 ]
+# Stage 1b: every hourly run, revision features, no run age (it partly stands in for time of day).
+EXTERNAL_REVISION = ["pda_rev_price_t", "pda_rev_price_max2h", "pda_rev_energy_req_t", "pda_rev_headroom_t"]
+EXTERNAL_PREDISPATCH_ALL = [
+    "pda_price_t", "pda_price_next", "pda_price_max2h", "pda_price_minus_last", "pda_energy_req_t",
+    "pda_energy_req_minus_last_demand", "pda_energy_req_ramp30", "pda_headroom", "pda_available_cap",
+    "pda_cont_raise_margin", "pda_reg_raise_price", "pda_cont_raise_price", "pda_energy_deficit",
+    "pda_price_change_1h", "pda_energy_req_change_1h", *EXTERNAL_REVISION,
+]
 
 
 def build_external(ready: pd.DataFrame, weather: pd.DataFrame | None = None, runs: pd.DataFrame | None = None) -> pd.DataFrame:
     weather = load_weather() if weather is None else weather
     runs = load_predispatch() if runs is None else runs
     wx = weather_features(ready.index, weather)
-    pdx = predispatch_features(ready.index, runs, ready[["mcp_lag_5min", "demand_lag_5min"]])
-    table = wx.join(pdx)
+    realised = ready[["mcp_lag_5min", "demand_lag_5min"]]
+    if runs.empty:
+        table = wx
+    else:
+        pdx = predispatch_features(ready.index, even_hour_runs(runs), realised)
+        pda = predispatch_features_all(ready.index, runs, realised)
+        table = wx.join(pdx).join(pda)
     check_availability(table)
     return table
 
 
 def predispatch_coverage(table: pd.DataFrame, runs: pd.DataFrame) -> pd.DataFrame:
-    """Per split: origins with a usable pre-dispatch run, run age, and runs present in the archive."""
+    """Per run set and split: origins with a usable run, run age, and runs present in the archive."""
     from scripts.forecast_design import split_mask
 
     split = split_mask(table.index)
-    labels = pd.Series(runs["run_label"].unique())
-    run_split = split_mask(pd.DatetimeIndex(labels))
+    sets = (("even_hour", "pd_", even_hour_runs(runs), "2h"), ("all_hourly", "pda_", runs, "1h"))
     rows = []
-    for name in ("train", "calibration", "test"):
-        block = table.loc[split.eq(name).to_numpy()]
-        if block.empty:
-            continue
-        lo, hi = block.index.min(), block.index.max()
-        expected = pd.date_range(lo.ceil("2h"), hi.floor("2h"), freq="2h")
-        present = pd.DatetimeIndex(labels[run_split.eq(name).to_numpy()])
-        age = block["pd_run_age_min"].dropna()
-        rows.append({
-            "split": name,
-            "first_target": lo,
-            "last_target": hi,
-            "origins": int(len(block)),
-            "origins_with_predispatch": int(block["pd_price_t"].notna().sum()),
-            "share_with_predispatch": float(block["pd_price_t"].notna().mean()),
-            "even_hour_runs_expected": int(len(expected)),
-            "even_hour_runs_present": int(present.isin(expected).sum()),
-            "run_age_min_median": float(age.median()) if len(age) else np.nan,
-            "run_age_min_max": float(age.max()) if len(age) else np.nan,
-        })
+    for set_name, prefix, subset, step in sets:
+        labels = pd.Series(subset["run_label"].unique())
+        run_split = split_mask(pd.DatetimeIndex(labels))
+        for name in ("train", "calibration", "test"):
+            block = table.loc[split.eq(name).to_numpy()]
+            if block.empty or f"{prefix}price_t" not in block:
+                continue
+            lo, hi = block.index.min(), block.index.max()
+            expected = pd.date_range(lo.ceil(step), hi.floor(step), freq=step)
+            present = pd.DatetimeIndex(labels[run_split.eq(name).to_numpy()])
+            age = block[f"{prefix}run_age_min"].dropna()
+            row = {
+                "run_set": set_name,
+                "split": name,
+                "first_target": lo,
+                "last_target": hi,
+                "origins": int(len(block)),
+                "origins_with_predispatch": int(block[f"{prefix}price_t"].notna().sum()),
+                "share_with_predispatch": float(block[f"{prefix}price_t"].notna().mean()),
+                "runs_expected": int(len(expected)),
+                "runs_present": int(present.isin(expected).sum()),
+                "run_age_min_median": float(age.median()) if len(age) else np.nan,
+                "run_age_min_p95": float(age.quantile(0.95)) if len(age) else np.nan,
+                "run_age_min_max": float(age.max()) if len(age) else np.nan,
+                "share_age_40_100": float(age.between(40, 100).mean()) if len(age) else np.nan,
+            }
+            if prefix == "pda_":
+                row["share_with_revision"] = float(block["pda_rev_price_t"].notna().mean())
+            rows.append(row)
     return pd.DataFrame(rows)
 
 
 def check_availability(table: pd.DataFrame) -> None:
     origin = table["forecast_origin"]
-    for col in ("wx_available_at", "pd_available_at"):
+    for col in [c for c in table.columns if c.endswith("_available_at")]:
         if col in table:
             late = table[col].notna() & (table[col] > origin)
             if late.any():

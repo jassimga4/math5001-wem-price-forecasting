@@ -30,7 +30,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.external_features import EXTERNAL_PREDISPATCH, EXTERNAL_WEATHER, FEATURES_PATH, build_external  # noqa: E402
+from scripts.external_features import (  # noqa: E402
+    EXTERNAL_PREDISPATCH, EXTERNAL_PREDISPATCH_ALL, EXTERNAL_WEATHER, FEATURES_PATH, build_external,
+)
 from scripts.forecast_design import INNER_VAL_START, TREE_FEATURES, slice_split, split_mask  # noqa: E402
 from scripts.metrics import crps_from_residual_samples  # noqa: E402
 from scripts.regime_switch import WINDOW, forecasts, load, mask_for, switched  # noqa: E402
@@ -39,13 +41,16 @@ OUT = ROOT / "reports" / "forecast"
 FIT_START = pd.Timestamp("2024-03-01")
 SIZE_LEVELS = np.round(np.arange(0.05, 1.0, 0.10), 2)
 CUTOFFS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, np.inf]
-MIX_CUTOFFS = [0.02, 0.05, 0.1, 0.2, 0.3, 0.5, np.inf]
+# Stage 1b: extended below 0.02 because every stage-1 model chose the lowest value.
+MIX_CUTOFFS = [0.0025, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5, np.inf]
 PANEL = [*TREE_FEATURES, "move_30", "move_60"]
 FEATURE_SETS = {
     "hurdle_panel": PANEL,
     "hurdle_weather": PANEL + EXTERNAL_WEATHER,
-    "hurdle_weather_predispatch": PANEL + EXTERNAL_WEATHER + EXTERNAL_PREDISPATCH,
+    "hurdle_weather_predispatch": PANEL + EXTERNAL_WEATHER + EXTERNAL_PREDISPATCH,  # even-hour runs (stage 1)
+    "hurdle_weather_predispatch_all": PANEL + EXTERNAL_WEATHER + EXTERNAL_PREDISPATCH_ALL,  # hourly runs + revisions
 }
+EXTERNAL_PREFIXES = ("pd_", "pda_", "wx_")
 CLF_PARAMS = dict(
     n_estimators=1500, learning_rate=0.03, num_leaves=31, min_child_samples=200, subsample=0.8,
     subsample_freq=1, colsample_bytree=0.8, reg_lambda=1.0, verbose=-1, random_state=7,
@@ -101,7 +106,7 @@ def check_attached(rows, features, minimum=0.9):
     running; its pre-dispatch columns were empty on train, so LightGBM never
     split on them and the row equalled hurdle_weather.
     """
-    external = [f for f in features if f.startswith(("pd_", "wx_"))]
+    external = [f for f in features if f.startswith(EXTERNAL_PREFIXES)]
     share = rows[external].notna().mean()
     low = share[share < minimum]
     if not low.empty:
@@ -277,20 +282,28 @@ def block_bootstrap_mean_diff(diff, mask, block=288, n_boot=1000, seed=42):
     return float(diff.sum() / m.sum()), float(np.quantile(draws, 0.05)), float(np.quantile(draws, 0.95))
 
 
+BOOT_SUBSETS = ("all", "tail", "onset", "fresh_onset")
+
+
 def bootstrap_table(test, per_row):
-    """Model minus regime switch on test, with 90% moving-block (1 day) intervals."""
+    """Model minus baseline on test, with 90% moving-block (1 day) intervals.
+
+    Baselines are the regime switch (stage 1) and persistence (stage 1b). Each
+    pair uses the same seed, so the regime-switch ranges match stage 1.
+    """
     y = test["y"].to_numpy(float)
-    base_hat, base_crps = per_row[("regime_switch", "test")]
     out = []
-    for (name, split), (yhat, crps) in per_row.items():
-        if split != "test" or name == "regime_switch":
-            continue
-        for subset in ("all", "tail", "onset", "fresh_onset"):
-            mask = np.ones(len(y), bool) if subset == "all" else test[subset].to_numpy()
-            for metric, a, b in (("mae", np.abs(y - yhat), np.abs(y - base_hat)), ("crps", crps, base_crps)):
-                mean, lo, hi = block_bootstrap_mean_diff(a - b, mask)
-                out.append({"model": name, "subset": subset, "metric": metric, "diff_vs_regime_switch": mean,
-                            "boot_p05": lo, "boot_p95": hi, "n": int(mask.sum())})
+    for baseline in ("regime_switch", "persistence"):
+        base_hat, base_crps = per_row[(baseline, "test")]
+        for (name, split), (yhat, crps) in per_row.items():
+            if split != "test" or name == baseline:
+                continue
+            for subset in BOOT_SUBSETS:
+                mask = np.ones(len(y), bool) if subset == "all" else test[subset].to_numpy()
+                for metric, a, b in (("mae", np.abs(y - yhat), np.abs(y - base_hat)), ("crps", crps, base_crps)):
+                    mean, lo, hi = block_bootstrap_mean_diff(a - b, mask)
+                    out.append({"model": name, "baseline": baseline, "subset": subset, "metric": metric, "diff": mean,
+                                "boot_p05": lo, "boot_p95": hi, "n": int(mask.sum())})
     return pd.DataFrame(out)
 
 
@@ -408,9 +421,9 @@ def run(frame, spike, floor):
             "mixture_cutoffs": {"up": float(best_mix["c_up"]), "down": float(best_mix["c_down"])},
             "detection_cutoff": float(c_det),
             "external_non_null_share": {
-                split: {k: round(float(v), 4) for k, v in frame_split[[f for f in features if f.startswith(("pd_", "wx_"))]].notna().mean().items()}
+                split: {k: round(float(v), 4) for k, v in frame_split[[f for f in features if f.startswith(EXTERNAL_PREFIXES)]].notna().mean().items()}
                 for split, frame_split in (("train_fit_rows", train.loc[train["eligible"] & (train.index >= FIT_START)]), ("calibration", cal), ("test", test))
-            } if any(f.startswith(("pd_", "wx_")) for f in features) else {},
+            } if any(f.startswith(EXTERNAL_PREFIXES) for f in features) else {},
             "calibration_detection_f1": float(f1_best),
         }
         grid.insert(0, "model", set_name)

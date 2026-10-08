@@ -141,7 +141,7 @@ def fetch_day(day: pd.Timestamp, which: int, dest: Path, threads: int) -> str:
     return f"{day:%Y-%m-%d} runs={len(parts)}/{len(names)}"
 
 
-CONSOLIDATED = OUT / "predispatch_runs_first9h.parquet"
+CONSOLIDATED = OUT / "predispatch_runs_first9h.parquet"  # both passes when pulled
 MISSING_RUNS = OUT / "missing_runs.csv"
 KEEP_INTERVALS = 18  # 9 hours of half-hourly intervals per run; features read at most 6 h past the run label
 
@@ -155,12 +155,18 @@ def consolidate() -> None:
     runs.to_parquet(CONSOLIDATED, index=False, compression="zstd")
     labels = pd.to_datetime(runs["run_label"], format="%Y%m%d%H%M")
     print(f"{CONSOLIDATED.name}: {runs['run_label'].nunique()} runs, {labels.min()} to {labels.max()}, {len(runs)} rows")
-    # Even-hour runs (pass 1) that are not in the extracts. The pull logged no
-    # download failures, so these are runs absent from the archive ZIPs.
-    expected = pd.date_range(labels.min(), labels.max(), freq="2h")
-    missing = expected.difference(pd.DatetimeIndex(labels.unique()))
-    pd.DataFrame({"run_label": missing}).to_csv(MISSING_RUNS, index=False)
-    print(f"{len(missing)} even-hour runs missing; listed in {MISSING_RUNS.name}")
+    # On-the-hour runs of each pulled pass that are not in the extracts. Download
+    # failures are logged as FAILED on stderr; runs absent from a ZIP are not.
+    present = pd.DatetimeIndex(labels.unique())
+    passes = sorted(int(f.parent.name[-1]) for f in files)
+    start = labels.min().floor("D") + pd.Timedelta(hours=8)
+    expected = pd.date_range(start, labels.max().ceil("D") + pd.Timedelta(hours=7), freq="1h")
+    expected = expected[(expected >= labels.min()) & (expected <= labels.max())]
+    keep = [(t.hour % 2 == 0 and 1 in passes) or (t.hour % 2 == 1 and 2 in passes) for t in expected]
+    missing = expected[keep].difference(present)
+    pd.DataFrame({"run_label": missing, "run_type": ["even_hour" if t.hour % 2 == 0 else "odd_hour" for t in missing]}).to_csv(
+        MISSING_RUNS, index=False)
+    print(f"{len(missing)} on-the-hour runs missing; listed in {MISSING_RUNS.name}")
 
 
 def main() -> None:
