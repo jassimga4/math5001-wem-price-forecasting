@@ -212,6 +212,8 @@ class SpikeForecaster:
         out["up_median"], up_grid = so.predict_size(self.models["size_up"], out, self.features)
         out["down_median"], down_grid = so.predict_size(self.models["size_down"], out, self.features)
         out["up_grid"], out["down_grid"] = list(up_grid), list(down_grid)
+        if self.history is None:
+            raise RuntimeError("no residual history: call set_history(frame) with a frame built by build_frame()")
         hist_index = self.history.index.to_numpy()
         positions = np.searchsorted(hist_index, out.index.to_numpy(), side="left")  # strictly earlier rows only
         if (positions < WINDOW).any():
@@ -310,15 +312,15 @@ class SpikeForecaster:
     def save(self, path: Path = MODEL_PATH) -> Path:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump({"config": self.config, "models": self.models, "cutoffs": self.cutoffs, "history": self.history},
-                    path, compress=3)
+        # The residual history is data, not a fitted quantity: it is rebuilt from the panel with set_history().
+        joblib.dump({"config": self.config, "models": self.models, "cutoffs": self.cutoffs}, path, compress=3)
         return path
 
     @classmethod
     def load(cls, path: Path = MODEL_PATH) -> "SpikeForecaster":
         saved = joblib.load(path)
         obj = cls(saved["config"])
-        obj.models, obj.cutoffs, obj.history = saved["models"], saved["cutoffs"], saved["history"]
+        obj.models, obj.cutoffs = saved["models"], saved["cutoffs"]
         return obj
 
 
