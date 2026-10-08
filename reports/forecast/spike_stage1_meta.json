@@ -1315,6 +1315,468 @@
         "stem_imbalance": NaN,
         "hour": NaN
       }
+    },
+    "hurdle_panel_path_lgbm_wide": {
+      "features": [
+        "mcp_lag_5min",
+        "mcp_lag_30min",
+        "mcp_lag_60min",
+        "mcp_lag_1d",
+        "demand_lag_5min",
+        "dpv_lag_5min",
+        "withdrawal_lag_5min",
+        "cr_raise_lag_5min",
+        "cr_lower_lag_5min",
+        "reg_raise_lag_5min",
+        "reg_lower_lag_5min",
+        "rtp_last_complete",
+        "stem_price",
+        "stem_imbalance",
+        "hour",
+        "dow",
+        "month",
+        "move_30",
+        "move_60",
+        "path_near_up_30",
+        "path_near_up_60",
+        "path_near_down_30",
+        "path_near_down_60",
+        "path_slope_15",
+        "path_climb_run",
+        "path_fall_run",
+        "path_std_30",
+        "path_max60_minus_last"
+      ],
+      "classifier": "lightgbm_wide",
+      "classifier_up": {
+        "iterations": {
+          "iterations": 150,
+          "val_window": [
+            "2025-07-01",
+            "2025-09-30"
+          ],
+          "val_positives": 416
+        },
+        "positives": 2185,
+        "rows": 152263
+      },
+      "classifier_down": {
+        "iterations": {
+          "iterations": 112,
+          "val_window": [
+            "2024-10-01",
+            "2024-12-31"
+          ],
+          "val_positives": 213
+        },
+        "positives": 634,
+        "rows": 152263
+      },
+      "size_rows": {
+        "up": 2185,
+        "down": 634
+      },
+      "point_cutoffs": {
+        "up": 0.5,
+        "down": 0.1
+      },
+      "mixture_cutoffs": {
+        "up": 0.0025,
+        "down": 0.05
+      },
+      "detection_cutoff": 0.22,
+      "external_non_null_share": {},
+      "calibration_detection_f1": 0.4232081911262799,
+      "top_up_features_by_gain": {
+        "rtp_last_complete": 116245.1,
+        "mcp_lag_5min": 16208.6,
+        "path_near_up_30": 6172.4,
+        "path_std_30": 4280.9,
+        "path_slope_15": 4129.3,
+        "mcp_lag_30min": 2835.4,
+        "reg_raise_lag_5min": 2807.1,
+        "cr_raise_lag_5min": 2476.4,
+        "dpv_lag_5min": 2464.4,
+        "path_max60_minus_last": 2447.7,
+        "stem_price": 2342.5,
+        "mcp_lag_60min": 2230.7,
+        "path_near_up_60": 2151.0,
+        "demand_lag_5min": 2131.5,
+        "move_30": 2046.2
+      },
+      "top_down_features_by_gain": {
+        "rtp_last_complete": 34921.8,
+        "mcp_lag_5min": 14324.7,
+        "reg_lower_lag_5min": 9981.9,
+        "withdrawal_lag_5min": 1723.9,
+        "month": 1717.0,
+        "path_std_30": 1386.1,
+        "demand_lag_5min": 1330.8,
+        "path_slope_15": 1226.3,
+        "stem_imbalance": 1114.5,
+        "path_max60_minus_last": 1036.2,
+        "dpv_lag_5min": 1016.3,
+        "stem_price": 957.2,
+        "cr_lower_lag_5min": 930.6,
+        "mcp_lag_1d": 899.4,
+        "mcp_lag_30min": 803.9
+      }
+    },
+    "hurdle_panel_path_hist_gb_wide": {
+      "features": [
+        "mcp_lag_5min",
+        "mcp_lag_30min",
+        "mcp_lag_60min",
+        "mcp_lag_1d",
+        "demand_lag_5min",
+        "dpv_lag_5min",
+        "withdrawal_lag_5min",
+        "cr_raise_lag_5min",
+        "cr_lower_lag_5min",
+        "reg_raise_lag_5min",
+        "reg_lower_lag_5min",
+        "rtp_last_complete",
+        "stem_price",
+        "stem_imbalance",
+        "hour",
+        "dow",
+        "month",
+        "move_30",
+        "move_60",
+        "path_near_up_30",
+        "path_near_up_60",
+        "path_near_down_30",
+        "path_near_down_60",
+        "path_slope_15",
+        "path_climb_run",
+        "path_fall_run",
+        "path_std_30",
+        "path_max60_minus_last"
+      ],
+      "classifier": "hist_gb_wide",
+      "classifier_up": {
+        "iterations": {
+          "learning_rate": 0.05,
+          "max_leaf_nodes": 15,
+          "max_iter": 100,
+          "val_log_loss": 0.050272965001019264,
+          "grid": [
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 15,
+              "max_iter": 50,
+              "val_log_loss": 0.05102702065605927
+            },
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 15,
+              "max_iter": 100,
+              "val_log_loss": 0.050272965001019264
+            },
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 15,
+              "max_iter": 200,
+              "val_log_loss": 0.05044537307644576
+            },
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 15,
+              "max_iter": 400,
+              "val_log_loss": 0.050748784209185355
+            },
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 31,
+              "max_iter": 50,
+              "val_log_loss": 0.051051403173695165
+            },
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 31,
+              "max_iter": 100,
+              "val_log_loss": 0.05046191200671774
+            },
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 31,
+              "max_iter": 200,
+              "val_log_loss": 0.050924387333585945
+            },
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 31,
+              "max_iter": 400,
+              "val_log_loss": 0.051904482865478586
+            },
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 63,
+              "max_iter": 50,
+              "val_log_loss": 0.051035306422656
+            },
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 63,
+              "max_iter": 100,
+              "val_log_loss": 0.050760384260309314
+            },
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 63,
+              "max_iter": 200,
+              "val_log_loss": 0.05169058576194009
+            },
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 63,
+              "max_iter": 400,
+              "val_log_loss": 0.054891967498916436
+            },
+            {
+              "learning_rate": 0.1,
+              "max_leaf_nodes": 15,
+              "max_iter": 50,
+              "val_log_loss": 0.05175413629123812
+            },
+            {
+              "learning_rate": 0.1,
+              "max_leaf_nodes": 15,
+              "max_iter": 100,
+              "val_log_loss": 0.052021904207852875
+            },
+            {
+              "learning_rate": 0.1,
+              "max_leaf_nodes": 15,
+              "max_iter": 200,
+              "val_log_loss": 0.05236010214242228
+            },
+            {
+              "learning_rate": 0.1,
+              "max_leaf_nodes": 31,
+              "max_iter": 50,
+              "val_log_loss": 0.052345369249012244
+            },
+            {
+              "learning_rate": 0.1,
+              "max_leaf_nodes": 31,
+              "max_iter": 100,
+              "val_log_loss": 0.052562779494661295
+            },
+            {
+              "learning_rate": 0.1,
+              "max_leaf_nodes": 31,
+              "max_iter": 200,
+              "val_log_loss": 0.053581580734227044
+            },
+            {
+              "learning_rate": 0.1,
+              "max_leaf_nodes": 63,
+              "max_iter": 50,
+              "val_log_loss": 0.05258119499988756
+            },
+            {
+              "learning_rate": 0.1,
+              "max_leaf_nodes": 63,
+              "max_iter": 100,
+              "val_log_loss": 0.053622930360348355
+            },
+            {
+              "learning_rate": 0.1,
+              "max_leaf_nodes": 63,
+              "max_iter": 200,
+              "val_log_loss": 0.05647036905722029
+            }
+          ],
+          "val_window": [
+            "2025-07-01",
+            "2025-09-30"
+          ],
+          "val_positives": 416
+        },
+        "positives": 2185,
+        "rows": 152263
+      },
+      "classifier_down": {
+        "iterations": {
+          "learning_rate": 0.05,
+          "max_leaf_nodes": 15,
+          "max_iter": 100,
+          "val_log_loss": 0.028817158954556048,
+          "grid": [
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 15,
+              "max_iter": 50,
+              "val_log_loss": 0.029028246035564628
+            },
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 15,
+              "max_iter": 100,
+              "val_log_loss": 0.028817158954556048
+            },
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 15,
+              "max_iter": 200,
+              "val_log_loss": 0.02944316495907778
+            },
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 15,
+              "max_iter": 400,
+              "val_log_loss": 0.031124478642003926
+            },
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 31,
+              "max_iter": 50,
+              "val_log_loss": 0.029559040655874617
+            },
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 31,
+              "max_iter": 100,
+              "val_log_loss": 0.02967916977855872
+            },
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 31,
+              "max_iter": 200,
+              "val_log_loss": 0.03132100260742729
+            },
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 63,
+              "max_iter": 50,
+              "val_log_loss": 0.029383069744594873
+            },
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 63,
+              "max_iter": 100,
+              "val_log_loss": 0.02962484715143646
+            },
+            {
+              "learning_rate": 0.05,
+              "max_leaf_nodes": 63,
+              "max_iter": 200,
+              "val_log_loss": 0.03247012489964114
+            },
+            {
+              "learning_rate": 0.1,
+              "max_leaf_nodes": 15,
+              "max_iter": 50,
+              "val_log_loss": 0.03168470795348617
+            },
+            {
+              "learning_rate": 0.1,
+              "max_leaf_nodes": 15,
+              "max_iter": 100,
+              "val_log_loss": 0.032757587735549314
+            },
+            {
+              "learning_rate": 0.1,
+              "max_leaf_nodes": 15,
+              "max_iter": 200,
+              "val_log_loss": 0.03408763750416671
+            },
+            {
+              "learning_rate": 0.1,
+              "max_leaf_nodes": 31,
+              "max_iter": 50,
+              "val_log_loss": 0.03165342310163913
+            },
+            {
+              "learning_rate": 0.1,
+              "max_leaf_nodes": 31,
+              "max_iter": 100,
+              "val_log_loss": 0.03304245733143517
+            },
+            {
+              "learning_rate": 0.1,
+              "max_leaf_nodes": 31,
+              "max_iter": 200,
+              "val_log_loss": 0.03773654892774329
+            },
+            {
+              "learning_rate": 0.1,
+              "max_leaf_nodes": 63,
+              "max_iter": 50,
+              "val_log_loss": 0.03211683784550442
+            },
+            {
+              "learning_rate": 0.1,
+              "max_leaf_nodes": 63,
+              "max_iter": 100,
+              "val_log_loss": 0.034762825938480464
+            },
+            {
+              "learning_rate": 0.1,
+              "max_leaf_nodes": 63,
+              "max_iter": 200,
+              "val_log_loss": 0.03924294487124869
+            }
+          ],
+          "val_window": [
+            "2024-10-01",
+            "2024-12-31"
+          ],
+          "val_positives": 213
+        },
+        "positives": 634,
+        "rows": 152263
+      },
+      "size_rows": {
+        "up": 2185,
+        "down": 634
+      },
+      "point_cutoffs": {
+        "up": 0.8,
+        "down": 0.2
+      },
+      "mixture_cutoffs": {
+        "up": 0.0025,
+        "down": 0.2
+      },
+      "detection_cutoff": 0.24,
+      "external_non_null_share": {},
+      "calibration_detection_f1": 0.43884892086330934,
+      "top_up_features_by_gain": {
+        "mcp_lag_5min": NaN,
+        "mcp_lag_30min": NaN,
+        "mcp_lag_60min": NaN,
+        "mcp_lag_1d": NaN,
+        "demand_lag_5min": NaN,
+        "dpv_lag_5min": NaN,
+        "withdrawal_lag_5min": NaN,
+        "cr_raise_lag_5min": NaN,
+        "cr_lower_lag_5min": NaN,
+        "reg_raise_lag_5min": NaN,
+        "reg_lower_lag_5min": NaN,
+        "rtp_last_complete": NaN,
+        "stem_price": NaN,
+        "stem_imbalance": NaN,
+        "hour": NaN
+      },
+      "top_down_features_by_gain": {
+        "mcp_lag_5min": NaN,
+        "mcp_lag_30min": NaN,
+        "mcp_lag_60min": NaN,
+        "mcp_lag_1d": NaN,
+        "demand_lag_5min": NaN,
+        "dpv_lag_5min": NaN,
+        "withdrawal_lag_5min": NaN,
+        "cr_raise_lag_5min": NaN,
+        "cr_lower_lag_5min": NaN,
+        "reg_raise_lag_5min": NaN,
+        "reg_lower_lag_5min": NaN,
+        "rtp_last_complete": NaN,
+        "stem_price": NaN,
+        "stem_imbalance": NaN,
+        "hour": NaN
+      }
     }
   }
 }

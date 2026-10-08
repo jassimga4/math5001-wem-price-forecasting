@@ -58,13 +58,28 @@ FEATURE_SETS = {
     "hurdle_panel_path_xgboost": PANEL + PATH_FEATURES,
     "hurdle_panel_path_hist_gb": PANEL + PATH_FEATURES,
     "hurdle_panel_path_logistic": PANEL + PATH_FEATURES,
+    # Stage B follow-up: wider capacity search on the inner validation window (inside train) only.
+    "hurdle_panel_path_lgbm_wide": PANEL + PATH_FEATURES,
+    "hurdle_panel_path_hist_gb_wide": PANEL + PATH_FEATURES,
 }
 # Classifier per row; every row not listed uses LightGBM (stages 1 to 1c and A). Size models stay LightGBM.
 CLASSIFIER = {
     "hurdle_panel_path_xgboost": "xgboost",
     "hurdle_panel_path_hist_gb": "hist_gb",
     "hurdle_panel_path_logistic": "logistic",
+    "hurdle_panel_path_lgbm_wide": "lightgbm_wide",
+    "hurdle_panel_path_hist_gb_wide": "hist_gb_wide",
 }
+# The frozen forecaster's row reads features and classifier settings from configs/spike_forecaster.json.
+FROZEN_CONFIG = ROOT / "configs" / "spike_forecaster.json"
+if FROZEN_CONFIG.exists():
+    FEATURE_SETS["spike_forecaster"] = json.loads(FROZEN_CONFIG.read_text())["features"]
+    CLASSIFIER["spike_forecaster"] = "frozen_config"
+# Point mode per row: "hurdle" (default) chooses the point override on calibration; "regime_switch" issues the
+# regime switch as the point and keeps the hurdle only for the distribution and alerts.
+POINT_MODE = {"spike_forecaster": "regime_switch"}
+# The implemented forecaster (scripts/spike_forecaster.py) must reproduce this row; its test detail is saved.
+FROZEN_ROW = "spike_forecaster"
 EXTERNAL_PREFIXES = ("pd_", "pda_", "pdh_", "wx_")
 CLF_PARAMS = dict(
     n_estimators=1500, learning_rate=0.03, num_leaves=31, min_child_samples=200, subsample=0.8,
@@ -136,18 +151,57 @@ def check_attached(rows, features, minimum=0.9):
 def fit_classifier(train, features, label, kind="lightgbm"):
     rows = train.loc[train["eligible"] & (train.index >= FIT_START)]
     check_attached(rows, features)
-    fit, val = rows.loc[rows.index < INNER_VAL_START], rows.loc[rows.index >= INNER_VAL_START]
-    if kind != "lightgbm":
+    if kind == "frozen_config":  # fixed settings, refitted on all training rows; nothing is selected here
+        from scripts.spike_forecaster import load_config, make_classifier
+
+        clf = load_config(FROZEN_CONFIG)["classifier"]
+        params = {**clf.get("fixed", {}), **clf["params"][label]}
+        model = make_classifier(clf["kind"], params)
+        model.fit(_xy(rows, features), rows[label].astype(int))
+        return model, params, int(rows[label].sum()), int(len(rows))
+    fit, val, window = inner_split(rows, label, adaptive=kind.endswith("_wide"))
+    if kind not in ("lightgbm", "lightgbm_wide"):
         model, best = fit_other_classifier(kind, _xy(fit, features), fit[label].astype(int), _xy(val, features),
                                            val[label].astype(int), _xy(rows, features), rows[label].astype(int))
+        if kind.endswith("_wide"):
+            best = {**best, "val_window": window, "val_positives": int(val[label].sum())}
         return model, best, int(rows[label].sum()), int(len(rows))
-    probe = LGBMClassifier(**CLF_PARAMS)
+    params = CLF_PARAMS if kind == "lightgbm" else {**CLF_PARAMS, "n_estimators": LGBM_WIDE_TREES}
+    probe = LGBMClassifier(**params)
     probe.fit(_xy(fit, features), fit[label].astype(int), eval_X=(_xy(val, features),), eval_y=(val[label].astype(int),),
               eval_metric="binary_logloss", callbacks=[early_stopping(200, verbose=False)])
     best = max(int(probe.best_iteration_ or 100), 50)
-    model = LGBMClassifier(**{**CLF_PARAMS, "n_estimators": best})
+    model = LGBMClassifier(**{**params, "n_estimators": best})
     model.fit(_xy(rows, features), rows[label].astype(int))
+    if kind.endswith("_wide"):
+        best = {"iterations": best, "val_window": window, "val_positives": int(val[label].sum())}
     return model, best, int(rows[label].sum()), int(len(rows))
+
+
+MIN_VAL_POSITIVES = 50
+
+
+def inner_split(rows, label, adaptive=False):
+    """Probe-fit and validation rows, both inside train.
+
+    The default validation window is 2025-07-01 to 2025-09-30. It has no downward crossings (they almost vanished
+    after 2024), so its log loss keeps falling as a down classifier pushes every probability to zero and capacity
+    selection there is degenerate. With ``adaptive`` the window steps back a quarter at a time until it holds at
+    least MIN_VAL_POSITIVES positives; the probe is fitted on the rows before it. The final model is always refitted
+    on every training row.
+    """
+    default = (rows.loc[rows.index < INNER_VAL_START], rows.loc[rows.index >= INNER_VAL_START],
+               [str(INNER_VAL_START.date()), str(TRAIN_END.date())])
+    if not adaptive or default[1][label].sum() >= MIN_VAL_POSITIVES:
+        return default
+    end = INNER_VAL_START
+    while end - pd.DateOffset(months=3) >= FIT_START + pd.DateOffset(months=6):
+        start = end - pd.DateOffset(months=3)
+        val = rows.loc[(rows.index >= start) & (rows.index < end)]
+        if val[label].sum() >= MIN_VAL_POSITIVES:
+            return rows.loc[rows.index < start], val, [str(start.date()), str((end - pd.Timedelta(days=1)).date())]
+        end = start
+    return default
 
 
 XGB_PARAMS = dict(
@@ -155,6 +209,34 @@ XGB_PARAMS = dict(
     reg_lambda=1.0, tree_method="hist", eval_metric="logloss", random_state=7, n_jobs=8,
 )
 HGB_ITERS = [50, 100, 200, 400, 800]
+# Follow-up: the stage B down classifier chose 800, the top of HGB_ITERS, and LightGBM's down classifier
+# reached its 1,500-tree cap. The wide variants search further, still on the inner validation window only.
+LGBM_WIDE_TREES = 8000
+HGB_WIDE_ITERS = [50, 100, 200, 400, 800, 1600, 3200]
+HGB_WIDE_LR = [0.05, 0.1]
+HGB_WIDE_LEAVES = [15, 31, 63]
+
+
+def hgb_path(x_fit, y_fit, x_val, y_val, learning_rate, leaves, iters):
+    """Validation log loss along a warm-started HGB path; stops after two consecutive rises."""
+    from sklearn.ensemble import HistGradientBoostingClassifier
+    from sklearn.metrics import log_loss
+
+    probe = HistGradientBoostingClassifier(learning_rate=learning_rate, max_leaf_nodes=leaves, min_samples_leaf=200,
+                                           l2_regularization=1.0, max_iter=iters[0], early_stopping=False,
+                                           random_state=7, warm_start=True)
+    scores, rises = {}, 0
+    for n in iters:
+        probe.set_params(max_iter=n)
+        probe.fit(x_fit, y_fit)
+        scores[n] = float(log_loss(y_val, probe.predict_proba(x_val)[:, 1], labels=[0, 1]))
+        if len(scores) > 1 and scores[n] > list(scores.values())[-2]:
+            rises += 1
+            if rises >= 2:
+                break
+        else:
+            rises = 0
+    return scores
 LOGIT_C = [0.01, 0.1, 1.0]
 
 
@@ -190,6 +272,20 @@ def fit_other_classifier(kind, x_fit, y_fit, x_val, y_val, x_all, y_all):
         model = make(best)
         model.fit(x_all, y_all)
         return model, best
+    if kind == "hist_gb_wide":
+        from sklearn.ensemble import HistGradientBoostingClassifier
+
+        table = []
+        for lr in HGB_WIDE_LR:
+            for leaves in HGB_WIDE_LEAVES:
+                for n, score in hgb_path(x_fit, y_fit, x_val, y_val, lr, leaves, HGB_WIDE_ITERS).items():
+                    table.append({"learning_rate": lr, "max_leaf_nodes": leaves, "max_iter": n, "val_log_loss": score})
+        best = min(table, key=lambda r: r["val_log_loss"])
+        model = HistGradientBoostingClassifier(learning_rate=best["learning_rate"], max_leaf_nodes=best["max_leaf_nodes"],
+                                               min_samples_leaf=200, l2_regularization=1.0, max_iter=best["max_iter"],
+                                               early_stopping=False, random_state=7)
+        model.fit(x_all, y_all)
+        return model, {**best, "grid": table}
     if kind == "logistic":
         from sklearn.impute import SimpleImputer
         from sklearn.linear_model import LogisticRegression
@@ -462,6 +558,8 @@ def run(frame, spike, floor):
         grid = pd.DataFrame(grid)
         ok = grid.loc[grid["cal_mae"] <= base_cal["mae"] * 1.01]
         best_point = (ok if not ok.empty else grid).sort_values(["cal_tail_mae", "cal_mae"]).iloc[0]
+        if POINT_MODE.get(set_name) == "regime_switch":
+            best_point = pd.Series({"c_up": np.inf, "c_down": np.inf})
 
         # mixture cutoffs: lowest calibration tail CRPS with overall CRPS within 1% of the regime switch
         mgrid = []
@@ -532,6 +630,8 @@ def run(frame, spike, floor):
         for side, imp in (("up", importance), ("down", importance_dn)):
             gains.append(pd.DataFrame({"model": set_name, "classifier": side, "feature": imp.index, "gain": imp.to_numpy(),
                                        "share": imp.to_numpy() / imp.sum(), "rank": np.arange(1, len(imp) + 1)}))
+    if FROZEN_ROW in detail:
+        detail[FROZEN_ROW].to_parquet(OUT / "spike_forecaster_reference_test.parquet")
     boot = bootstrap_table(test, per_row)
     pd.concat(gains, ignore_index=True).to_csv(OUT / "spike_stage1_feature_gain.csv", index=False)
     return pd.DataFrame(rows), selections, model_meta, detail, boot
