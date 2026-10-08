@@ -21,6 +21,11 @@ scripts/pull_open_meteo.py              # archived day-ahead weather forecasts (
 scripts/pull_aemo_predispatch.py        # system-level fields from AEMO WEM pre-dispatch runs
 scripts/external_features.py            # leakage-safe external features keyed to forecast origins
 scripts/spike_onset.py                  # stage-1 hurdle onset model vs persistence, LightGBM, regime switch
+scripts/price_path.py                   # recent price-path features known at the origin
+scripts/spike_forecaster.py             # implemented spike forecaster: fit, save/load, forecast CLI
+scripts/spike_figures.py                # reliability, episode and first-interval CRPS figures
+configs/spike_forecaster.json           # frozen spike forecaster config (chosen on calibration)
+models/spike_forecaster.joblib          # fitted spike forecaster
 data/external/                          # external pulls, one README per source
 scripts/experiment.py                   # fit point models, conformal tables, and QRA
 scripts/metrics.py                      # MAE, pinball, interval scores, and CRPS
@@ -32,7 +37,8 @@ notebooks/02_baseline_models.ipynb       # ex-ante 5-minute baselines
 notebooks/03_final_point_model.ipynb     # LightGBM fit on the training window only
 notebooks/04_sliding_conformal.ipynb     # sliding-window conformal intervals
 models/lgbm_5min_ahead.joblib            # LightGBM saved by the experiment
-reports/forecast/                        # point, conformal, QRA, and regime-switch tables
+reports/forecast/                        # point, conformal, QRA, regime-switch and spike tables
+reports/figures/spike/                   # spike forecaster figures
 .env.example                            # copy to .env
 Dockerfile
 docker-compose.yml
@@ -151,6 +157,18 @@ python scripts/spike_onset.py
 ```
 
 The onset model needs `remotezip` for the pre-dispatch pull only. Features are built from the committed `data/external/aemo_predispatch/predispatch_runs_first9h.parquet` (about 31 MB, all half-hourly runs), so a fresh clone reproduces the results without the pull; the per-day extracts are used only if that file is absent.
+
+## Spike forecaster
+
+The implemented spike forecaster is frozen in `configs/spike_forecaster.json`. It uses panel and price-path features and a HistGradientBoosting spike classifier, LightGBM quantile size models, a mixture around the regime switch, and the regime switch as the point forecast. For each target interval, at origin T − 5 min, it gives the point forecast, P(spike up), P(spike down), quantiles (q01 to q99) and a spike alert. See "Implemented spike forecaster" in `docs/spike_stage1_results.md`.
+
+```bash
+python scripts/spike_forecaster.py fit        # fit on train, cutoffs on calibration; saves models/spike_forecaster.joblib
+python scripts/spike_forecaster.py evaluate   # test-window forecasts and metrics; checks they reproduce the frozen row
+python scripts/spike_forecaster.py forecast --start "2026-08-17 00:00" --end "2026-08-18 07:55" --out forecasts.csv
+python scripts/spike_figures.py               # figures in reports/figures/spike/
+python -m pytest tests/test_spike_forecaster.py
+```
 
 If you still see `Missing optional dependency 'pyarrow'`, the notebook or terminal is using a different Python:
 

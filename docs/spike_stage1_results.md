@@ -579,3 +579,138 @@ HistGradientBoosting is the best classifier, by a small margin.
 All of these gains are small next to the gap between any tree hurdle and persistence (first-interval CRPS about −13). The test AP order (LightGBM 0.364, XGBoost 0.354, HistGradientBoosting 0.346) does not match calibration, so the detection differences are noise.
 
 HistGradientBoosting's down classifier chose 800 iterations, the top of its grid. A wider grid, chosen on the inner validation window, is a cheap follow-up.
+
+## Stage B follow-up: wider HGB grid and uncapped LightGBM
+
+Two new rows search classifier capacity more widely. Every choice is still made inside train.
+
+- **HGB, wide grid:** learning rate {0.05, 0.1}, leaves {15, 31, 63}, and up to 3,200 warm-started iterations. Each path stops after two consecutive rises in validation loss.
+- **LightGBM, uncapped:** the tree cap goes from 1,500 to 8,000, with the same early stopping.
+
+**Finding: the down classifier's validation window was degenerate.** The default inner window (2025-07-01 to 2025-09-30) has 416 upward crossings but no downward ones. Downward crossings almost stopped after 2024; by quarter from 2025 Q1 they number 7, 1, 0, 2, 0, 0, 0. On a window with no positives, log loss keeps falling as the model pushes every probability to zero. That is why stage B's down classifiers ran to the top of their grids (LightGBM 1,500 trees, HGB 800 iterations). In a first run with the wider grids they did it again (LightGBM 7,998 of 8,000; HGB 3,200).
+
+The wide rows now step the validation window back a quarter at a time, inside train, until it holds at least 50 positives. For down this gives 2024-10-01 to 2024-12-31 (213 crossings), with the probe fitted on earlier train rows. The up window is unchanged.
+
+With a usable window, the down classifiers choose small models: LightGBM 112 trees, HGB 15 leaves and 100 iterations at learning rate 0.05. The up choices are LightGBM 150 trees (as before) and HGB 15 leaves, 100 iterations (stage B used 31 leaves).
+
+| Split | Row | MAE | CRPS | Tail CRPS | First-interval CRPS | AP |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Calibration | HGB (stage B) | 5.458 | 4.5075 | 55.47 | 73.36 | 0.389 |
+| Calibration | HGB, wide grid | 5.423 | 4.5125 | 56.01 | 75.49 | 0.382 |
+| Calibration | LightGBM (stage A) | 5.445 | 4.5072 | 55.91 | 75.09 | 0.373 |
+| Calibration | LightGBM, uncapped | 5.447 | 4.5072 | 55.91 | 75.08 | 0.382 |
+| Test | HGB (stage B) | 4.695 | 3.9148 | 13.13 | 29.08 | 0.346 |
+| Test | HGB, wide grid | 4.650 | 3.9106 | 13.12 | 29.01 | 0.348 |
+| Test | LightGBM (stage A) | 4.689 | 3.9143 | 13.20 | 29.66 | 0.364 |
+| Test | LightGBM, uncapped | 4.689 | 3.9143 | 13.20 | 29.66 | 0.364 |
+
+Test barely changes.
+
+- Uncapped LightGBM is identical to the stage A row on test, because no test origin passes its down mixture cutoff and the up classifier is the same.
+- The wide-grid HGB is level with the stage B HGB on test. Against the LightGBM stage A row it is −0.65 [−1.15, −0.21] on first-interval CRPS. On calibration it is worse (tail CRPS 56.01 against 55.47).
+
+## Implemented spike forecaster
+
+### Frozen configuration (`configs/spike_forecaster.json`)
+
+The configuration was chosen on calibration only. Test was not used for any choice.
+
+- **Features:** panel plus price-path features (28).
+- **Classifier:** HistGradientBoosting.
+  - Up: learning rate 0.05, 31 leaves, 100 iterations (the stage B choice on 2025-07 to 2025-09).
+  - Down: learning rate 0.05, 15 leaves, 100 iterations, chosen on 2024-10 to 2024-12. This replaces stage B's 800 iterations, which came from the degenerate window. Calibration has only 2 downward onsets, so it cannot choose this.
+  - Both: minimum leaf 200, L2 1. Refitted on eligible train rows from 2024-03-01 to 2025-09-30 23:55.
+- **Size models, mixture and residual window:** unchanged.
+  - LightGBM quantile models (median plus 10 levels), fitted on train crossings.
+  - A 2016-interval (7-day) residual window of the regime switch.
+  - Mixture weight capped at 0.95.
+- **Cutoffs (calibration):**
+  - mixture up 0.0025, down 0.2;
+  - spike alert when max(P up, P down) ≥ 0.24 (calibration F1 0.428).
+- **Point forecast: the regime switch, with no hurdle override.**
+  - Why: on calibration the HGB override improved tail MAE by only 0.07 (65.00 to 64.93) and first-interval MAE by 0.30 (105.76 to 105.46). It worsened overall MAE by 0.036 (5.422 to 5.458, +0.7%).
+  - Spike probabilities are rarely above 0.5, so an MAE-optimal point stays in the base distribution. The spike information is carried by the distribution and the alert.
+- **Why HGB:** it had the lowest calibration tail CRPS (55.47) and first-interval CRPS (73.36) of every candidate. The others were LightGBM 55.91 / 75.09, uncapped LightGBM 55.91 / 75.08, XGBoost 55.67 / 74.16, wide-grid HGB 56.01 / 75.49 and logistic 58.41 / 84.92.
+- **Windows:**
+  - train to 2025-09-30 23:55;
+  - calibration 2025-10-01 to 2026-03-31, scored after its first 2016 rows;
+  - test 2026-04-01 to 2026-08-18 07:55.
+- **Comparison row:** `scripts/spike_onset.py` builds the frozen row `spike_forecaster` from the same config file.
+
+### Results (calibration 125 onsets; test 403 onsets, all upward), with 90% moving-block bootstrap ranges (1-day blocks, 1,000 draws)
+
+| Split | Model | MAE | CRPS | Tail MAE | Tail CRPS | First-interval MAE | First-interval CRPS | Precision | Recall | AP |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Calibration | Persistence | 5.562 | 4.794 | 65.35 | 62.76 | 108.26 | 102.97 | – | 0.00 | – |
+| Calibration | Regime switch | 5.422 | 4.550 | 65.00 | 62.35 | 105.76 | 100.39 | 1.00 | 0.01 | – |
+| Calibration | **Spike forecaster** | 5.422 | 4.508 | 65.00 | 55.47 | 105.76 | 73.37 | 0.38 | 0.50 | 0.391 |
+| Test | Persistence | 4.745 | 4.176 | 16.00 | 14.77 | 45.83 | 42.50 | – | 0.00 | – |
+| Test | Regime switch | 4.650 | 3.975 | 16.13 | 14.70 | 45.22 | 41.57 | 0.41 | 0.02 | – |
+| Test | **Spike forecaster** | 4.650 | 3.915 | 16.13 | 13.13 | 45.22 | 29.08 | 0.32 | 0.56 | 0.346 |
+
+Each range is the spike forecaster minus the baseline:
+
+| Split | Baseline | Overall MAE | Overall CRPS | Tail CRPS | First-interval MAE | First-interval CRPS |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Calibration | Persistence | −0.14 [−0.19, −0.10] | −0.29 [−0.33, −0.25] | −7.29 [−10.18, −4.91] | −2.50 [−3.21, −1.76] | −29.60 [−38.49, −22.11] |
+| Calibration | Regime switch | 0 | −0.04 [−0.06, −0.02] | −6.88 [−9.79, −4.66] | 0 | −27.02 [−35.89, −19.94] |
+| Test | Persistence | −0.10 [−0.12, −0.07] | −0.26 [−0.30, −0.22] | −1.64 [−2.10, −1.25] | −0.61 [−0.86, −0.38] | −13.42 [−16.72, −10.70] |
+| Test | Regime switch | 0 | −0.06 [−0.09, −0.04] | −1.57 [−1.97, −1.23] | 0 | −12.49 [−15.53, −9.91] |
+
+The point equals the regime switch, so its MAE differences against the switch are exactly zero.
+
+- Fresh onsets on test: first-interval CRPS 33.89 against 49.69 for persistence (−15.80 [−19.52, −12.48]).
+- Test spike alerts: 720 of 40,127 intervals.
+- Empirical coverage of the central intervals on test: 90.8% (5–95%), 81.1% (10–90%) and 50.8% (25–75%). At the 403 onsets the 5–95% interval covers 82.6%.
+
+The module (`python scripts/spike_forecaster.py evaluate`) reproduces the frozen comparison row on calibration and test to 1.1e-16 on MAE, CRPS, tail, first-interval and fresh-onset metrics, precision, recall, AP and ROC AUC (`reports/forecast/spike_forecaster_validation.json`). Its test bootstrap ranges are identical to the ones from `spike_onset.py`.
+
+### Figures (`reports/figures/spike/`, made by `python scripts/spike_figures.py`)
+
+- `reliability_test.png` (bins in `reliability_test.csv`): P(spike up) on test at eligible origins.
+  - Above 0.3 it is close to calibrated: bins with means 0.38 and 0.56 saw 0.35 and 0.50.
+  - Below that it overstates the chance: the 0.07 bin saw 0.035, the 0.03 bin 0.014, and the 0.007 bin 0.001.
+  - The test window has no downward crossings, so the P(spike down) panel only shows that P(down) stayed below 0.01.
+- `example_episodes_test.png`: the three largest upward test onsets on separate days, with the 25–75% and 5–95% bands, the point, the actual price and the alerts. The test window has no downward onset.
+- `first_interval_crps.png`: first-interval CRPS against persistence and the regime switch on calibration and test, with bootstrap ranges.
+
+### Using it
+
+```bash
+python scripts/spike_forecaster.py fit        # train fit, calibration cutoffs (checked against the config), saves models/spike_forecaster.joblib
+python scripts/spike_forecaster.py evaluate   # test forecasts -> reports/forecast/spike_forecaster_test_forecasts.parquet, metrics, bootstrap, validation
+python scripts/spike_forecaster.py forecast --start "2026-08-17 00:00" --end "2026-08-18 07:55" --out forecasts.csv
+```
+
+```python
+from scripts.spike_forecaster import SpikeForecaster, build_frame, read_panel
+model = SpikeForecaster.load()                 # models/spike_forecaster.joblib (2.8 MB)
+frame = build_frame(read_panel(), model.config)  # origin-time inputs; the target price may be missing
+model.set_history(frame)                       # realised regime-switch residuals of earlier intervals
+fc = model.forecast(frame, targets)            # targets = interval labels; origin = target - 5 min
+```
+
+Each target gets:
+
+- the origin and the point forecast;
+- `p_up` and `p_down` (NaN when the last price is already outside the band, where the regime switch handles the tail);
+- `alert`;
+- the mixture weights;
+- the probabilities at or above the spike threshold and at or below the floor;
+- the quantiles q01, q05, q10, q25, q50, q75, q90 and q95, plus q99.
+
+`tests/test_spike_forecaster.py` covers:
+
+- weighted-quantile correctness and monotonicity;
+- no leakage at the origin: everything realised at or after the target, and later STEM, is perturbed and the forecast is unchanged;
+- monotone quantiles and probabilities in [0, 1];
+- the save and load round trip;
+- reproduction of the frozen row on a test day, row by row and in metrics.
+
+As a mutation check, feeding the target's own price into the path features makes the leakage and reproduction tests fail.
+
+### Caveats
+
+- The test window has no downward crossings, and calibration has 2. The down side is effectively untested; with mixture cutoff 0.2 it moved no weight on test.
+- Low spike probabilities are overstated on test, so read the alert and the mixture weights as rankings, not exact frequencies. A calibration-fitted recalibration (isotonic regression on calibration) would be the next step.
+- The regime-switch point and the first-interval point MAE gain over the regime switch are both zero by construction. The gain is in the distribution and the alert.
