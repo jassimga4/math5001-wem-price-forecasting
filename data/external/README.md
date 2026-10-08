@@ -5,7 +5,7 @@ Each source folder has its own README with URL, parameters, time zone and availa
 | Folder | Source | Used | Availability rule |
 | --- | --- | --- | --- |
 | `open_meteo/` | Open-Meteo Previous Runs API, `previous_day1` (ECMWF IFS 0.25°, GFS) | yes | value valid at V usable from V - 12 h |
-| `aemo_predispatch/` | AEMO WEM Reference pre-dispatch runs (even-hour runs) | yes | run label + 40 min, or issue time + 25 min if later |
+| `aemo_predispatch/` | AEMO WEM Reference pre-dispatch runs (every on-the-hour run: even hours in stage 1, all hours in stage 1b) | yes | run label + 40 min, or issue time + 25 min if later |
 
 ## Checked and not used
 
