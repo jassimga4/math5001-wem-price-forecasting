@@ -66,6 +66,8 @@ The mixture cutoff was the lowest value on the grid (0.02) for all three. A lowe
 
 ## Results
 
+The stage 1 tables below are from commit 8a07e63, when the mixture grid started at 0.02. Stage 1b (below) re-chose the mixture cutoffs on calibration from a wider grid. That changes only the CRPS columns of these rows, by at most 0.002 overall, 0.04 on the tail and 0.23 on fresh onsets. MAE, precision, recall and AP are unchanged. The current numbers for every row are in the stage 1b section and in `reports/forecast/spike_stage1_results.csv`.
+
 Definitions:
 
 - Tail: the realised price is outside the training band.
@@ -156,3 +158,137 @@ In short, stage 1 shows that a calibrated spike probability with a spike-size di
 3. Make cutoff selection less fragile. Use a rolling-origin or blocked choice across the end of train and calibration, rather than one window with 125 events, and widen the mixture grid below 0.02. Report the precision-recall curve rather than one F1 point.
 4. Keep the hurdle as a distribution model only. Issue the regime switch as the point forecast, and use the hurdle's probability and size grid for CRPS, intervals and spike alerts. Its point override does not pay.
 5. Add bootstrap ranges against persistence, and for rest of event, precision, recall and AP, before any stage-2 claims.
+
+## Stage 1b: hourly pre-dispatch runs and revision features
+
+### Data and availability
+
+The odd-hour runs (`--pass 2`) were pulled for 2023-09-30 to 2026-08-17, the same trading days as pass 1. The consolidated file now holds 25,120 hourly runs, 12,561 even and 12,559 odd. It is 18 MB and is committed. 152 on-the-hour runs are absent from the archive: 75 even and 77 odd. 141 are in train, 11 in calibration and none in test. Neither pull logged a download failure, and the 2023-12-20 ZIP has no on-the-hour runs at all. The list is in `data/external/aemo_predispatch/missing_runs.csv`.
+
+The availability rule is unchanged and holds for odd-hour runs:
+
+- Issue lag: odd runs have the same lag after the label as even runs, median 15.15 minutes (92% within 15.5 minutes).
+- Posting time: on the live folder, odd-hour, even-hour and half-hour runs were all posted 35 minutes after the label (`live_posting_check_20261008.csv`).
+
+| Run set | Split | Origins covered | Runs present / expected | Run age median / p95 / max (min) | Age 40–100 min | Previous run for revisions |
+| --- | --- | ---: | ---: | --- | ---: | ---: |
+| Even-hour (stage 1) | train | 99.28% | 8,687 / 8,756 | 105 / 160 / 240 | 48.2% | – |
+| Even-hour | calibration | 99.84% | 2,178 / 2,184 | 105 / 155 / 240 | 49.9% | – |
+| Even-hour | test | 100.00% | 1,672 / 1,672 | 105 / 155 / 205 | 50.0% | – |
+| All hourly (stage 1b) | train | 99.49% | 17,371 / 17,512 | 75 / 100 / 240 | 96.3% | 99.42% |
+| All hourly | calibration | 99.90% | 4,357 / 4,368 | 75 / 100 / 240 | 99.75% | 99.87% |
+| All hourly | test | 99.97% | 3,344 / 3,344 | 75 / 100 / 145 | 99.95% | 99.94% |
+
+The run used at the origin is now 40–100 minutes old, median 75, against a median of 105 with even-hour runs only.
+
+### Features (`pda_`, 19)
+
+- The 13 stage 1 pre-dispatch features, recomputed from the latest hourly run. This includes the spread between the latest run's forecast and the last realised price (`pda_price_minus_last`).
+- Within-run change: forecast price and energy requirement for the half hour containing T, minus the same run's forecast one hour earlier. If one hour earlier is before the run's first interval, the run's first interval is used instead, so the gap is 30–60 minutes.
+- Revisions: the latest usable run minus the run labelled before it, for forecast price at T, maximum forecast price over the next 2 hours, energy requirement at T, and headroom at T. The previous run is used only if it was itself published by the origin under the same rule and is at most 2 hours older. Otherwise the revisions are missing.
+- `pd_run_age_min` is not used. Run age is kept in the table for the coverage report only.
+
+The stage 1 even-hour features (`pd_`) are still computed from the even-hour runs alone, so that row is reproduced. Its point, detection and MAE figures are identical to stage 1.
+
+Leakage tests (`tests/test_external_features.py`) cover the new features in two ways:
+
+- **Synthetic runs:**
+  - corrupting or dropping any run published after the origin leaves every `pda_` feature, revisions included, unchanged;
+  - a previous run published late gives no revision;
+  - the revision compares exactly the latest and previous published runs.
+- **Real hourly runs:** the latest and previous runs both have `available_at` at or before the origin, the label + 40 min and issue + 25 min rule holds when recomputed from the raw label and issue time, and corrupting or dropping later runs changes nothing.
+
+I checked that the late-previous-run test fails when the availability check on the previous run is removed.
+
+### Cutoff grid
+
+The mixture grid now runs 0.0025, 0.005, 0.01, 0.02, 0.05, ... It is still chosen on calibration only, by the lowest tail CRPS with overall CRPS within 1% of the regime switch.
+
+Every model again chose the lowest up-cutoff, 0.0025. The calibration surface is almost flat there: tail CRPS at (0.02, 0.02) is only 0.03–0.04 above the chosen point for every model. So the edge choice amounts to always mixing in the spike grid with weight p. Going lower would change little.
+
+The new model's cutoffs, all chosen on calibration:
+
+- point: up 0.3, down 0.1;
+- mixture: up 0.0025, down 0.01;
+- detection: 0.20 (calibration F1 0.398).
+
+### Calibration (2025-10-08 to 2026-03-31; 50,381 intervals, 125 onsets)
+
+| Model | MAE | CRPS | Tail MAE | Tail CRPS | First-interval MAE | First-interval CRPS | Rest-of-event MAE | Onset precision | Onset recall | Onset AP |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Persistence | 5.562 | 4.794 | 65.35 | 62.76 | 108.26 | 102.97 | 50.69 | – (0 calls) | 0.00 | – |
+| LightGBM | 5.268 | 4.381 | 65.34 | 62.16 | 105.00 | 99.48 | 51.80 | 1.00 (4 calls) | 0.03 | – |
+| Regime switch | 5.422 | 4.550 | 65.00 | 62.35 | 105.76 | 100.39 | 51.09 | 1.00 (1 call) | 0.01 | – |
+| Hurdle, panel only | 5.437 | 4.511 | 64.08 | 55.97 | 102.14 | 75.34 | 51.09 | 0.36 | 0.46 | 0.338 |
+| Hurdle + weather | 5.448 | 4.513 | 63.54 | 56.42 | 100.02 | 77.10 | 51.09 | 0.35 | 0.46 | 0.326 |
+| Hurdle + weather + pre-dispatch (even-hour) | 5.455 | 4.508 | 61.63 | 56.27 | 92.51 | 76.52 | 51.09 | 0.36 | 0.50 | 0.333 |
+| **Hurdle + weather + pre-dispatch (hourly + revisions)** | 5.463 | 4.509 | 61.47 | 56.17 | 91.87 | 76.11 | 51.09 | 0.32 | 0.53 | 0.325 |
+
+### Test (2026-04-01 to 2026-08-18 07:55; 40,127 intervals, 403 onsets), scored once
+
+| Model | MAE | CRPS | Tail MAE | Tail CRPS | First-interval MAE | First-interval CRPS | Rest-of-event MAE | Onset precision | Onset recall | Onset AP |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Persistence | 4.745 | 4.176 | 16.00 | 14.77 | 45.83 | 42.50 | 11.71 | – (0 calls) | 0.00 | – |
+| LightGBM | 4.753 | 4.033 | 18.04 | 16.11 | 45.29 | 41.29 | 14.13 | 0.41 | 0.03 | – |
+| Regime switch | 4.650 | 3.975 | 16.13 | 14.70 | 45.22 | 41.57 | 11.95 | 0.41 | 0.02 | – |
+| Hurdle, panel only | 4.640 | 3.917 | 15.94 | 13.29 | 43.73 | 30.37 | 11.95 | 0.32 | 0.56 | 0.330 |
+| Hurdle + weather | 4.709 | 3.921 | 16.06 | 13.32 | 44.64 | 30.55 | 11.95 | 0.33 | 0.60 | 0.336 |
+| Hurdle + weather + pre-dispatch (even-hour) | 4.831 | 3.925 | 16.07 | 13.35 | 44.76 | 30.80 | 11.95 | 0.31 | 0.59 | 0.317 |
+| **Hurdle + weather + pre-dispatch (hourly + revisions)** | 4.869 | 3.926 | 15.82 | 13.28 | 42.71 | 30.28 | 11.95 | 0.30 | 0.66 | 0.308 |
+
+Test fresh onsets (233): the new row has first-interval MAE 49.27, CRPS 35.19 and recall 0.65. The even-hour row has 51.69, 35.97 and 0.55. Panel only has 51.66, 35.47 and 0.52. Persistence has 52.99 and 49.69.
+
+The new model's point override fires on 1.09% of test intervals (0.96% for even-hour). Its spike-grid mixture is active on 38.4% of test intervals, against 35.1–39.0% for the other hurdle rows at the new cutoffs.
+
+### Test bootstrap ranges (model minus baseline, moving-block bootstrap with 1-day blocks, 90%, 1,000 draws)
+
+Against persistence:
+
+| Model | Overall MAE | Tail CRPS | First-interval MAE | First-interval CRPS |
+| --- | ---: | ---: | ---: | ---: |
+| LightGBM | +0.01 [−0.05, +0.07] | +1.34 [+0.83, +1.92] | −0.55 [−0.84, −0.28] | −1.20 [−1.49, −0.97] |
+| Regime switch | −0.09 [−0.12, −0.07] | −0.07 [−0.21, +0.08] | −0.61 [−0.86, −0.38] | −0.93 [−1.18, −0.72] |
+| Hurdle, panel only | −0.10 [−0.14, −0.06] | −1.48 [−1.90, −1.12] | −2.10 [−4.82, −0.08] | −12.13 [−14.99, −9.77] |
+| Hurdle + weather | −0.04 [−0.09, +0.02] | −1.45 [−1.87, −1.10] | −1.19 [−4.55, +1.90] | −11.94 [−14.83, −9.58] |
+| Hurdle + wx + pre-dispatch (even-hour) | +0.09 [+0.02, +0.15] | −1.42 [−1.81, −1.10] | −1.07 [−4.64, +2.22] | −11.70 [−14.20, −9.57] |
+| Hurdle + wx + pre-dispatch (hourly + revisions) | +0.12 [+0.05, +0.20] | −1.49 [−1.90, −1.14] | −3.12 [−6.86, +0.32] | −12.22 [−14.97, −9.89] |
+
+Against the regime switch:
+
+| Model | Overall MAE | Tail CRPS | First-interval MAE | First-interval CRPS |
+| --- | ---: | ---: | ---: | ---: |
+| Persistence | +0.09 [+0.07, +0.12] | +0.07 [−0.08, +0.21] | +0.61 [+0.38, +0.86] | +0.93 [+0.72, +1.18] |
+| LightGBM | +0.10 [+0.06, +0.16] | +1.41 [+0.93, +2.00] | +0.06 [−0.05, +0.17] | −0.27 [−0.39, −0.16] |
+| Hurdle, panel only | −0.01 [−0.03, +0.01] | −1.41 [−1.76, −1.12] | −1.49 [−4.07, +0.49] | −11.20 [−13.83, −8.95] |
+| Hurdle + weather | +0.06 [+0.02, +0.10] | −1.38 [−1.73, −1.09] | −0.59 [−3.72, +2.52] | −11.01 [−13.72, −8.79] |
+| Hurdle + wx + pre-dispatch (even-hour) | +0.18 [+0.12, +0.24] | −1.35 [−1.66, −1.09] | −0.46 [−3.91, +2.70] | −10.77 [−13.06, −8.77] |
+| Hurdle + wx + pre-dispatch (hourly + revisions) | +0.22 [+0.15, +0.29] | −1.42 [−1.76, −1.14] | −2.51 [−6.20, +0.89] | −11.29 [−13.86, −9.08] |
+
+Fresh-onset CRPS ranges and every subset are in `spike_stage1_bootstrap.csv`, with a `baseline` column. The file has no ranges between two hurdle rows, so the gap between the new row and panel only is not tested directly.
+
+### Do fresher runs and revisions help at spike onset?
+
+Only a little, and not separably from noise. Against the even-hour pre-dispatch row on test:
+
+- first-interval MAE fell from 44.76 to 42.71, and fresh-onset MAE from 51.69 to 49.27;
+- recall rose from 0.59 to 0.66;
+- first-interval CRPS fell from 30.80 to 30.28.
+
+That makes the new row the best of all rows on first-interval MAE, first-interval CRPS, tail MAE and tail CRPS. But its first-interval MAE range crosses zero against both persistence (−3.12 [−6.86, +0.32]) and the regime switch (−2.51 [−6.20, +0.89]). Its CRPS edge over panel only (30.28 against 30.37) is too small to matter.
+
+The costs are also real:
+
+- precision fell to 0.30 and AP to 0.308, the lowest of the hurdle rows;
+- overall MAE is the worst of all rows (4.869), significantly worse than persistence (+0.12 [+0.05, +0.20]) and the regime switch (+0.22 [+0.15, +0.29]).
+
+The extra point overrides at calibration-chosen cutoffs cost more on ordinary intervals than they save at onsets.
+
+The revision and within-run-change features are not among the up-classifier's 15 largest by gain. The pre-dispatch fields that rank (5th to 12th) are the level features: forecast price, headroom, requirement minus last demand, the spread to the last price, and the contingency margin. Calibration moved the same way as test, but by less: first-interval MAE fell from 92.51 to 91.87 and recall rose from 0.50 to 0.53, while AP fell from 0.333 to 0.325.
+
+The robust result is still the one from stage 1. The hurdle's spike-probability mixture beats persistence by about 12 on first-interval CRPS and 1.5 on tail CRPS, with ranges well clear of zero, and panel features alone already get it. External data, fresher or not, has not yet added a gain that the bootstrap can separate.
+
+Next:
+
+- Issue the regime switch as the point forecast and keep the hurdle for the distribution, spike probability and alerts. Every pre-dispatch row loses on overall MAE through its point override.
+- Revisions between 60-minute-apart runs are probably too coarse. The half-hour runs (posted 35 minutes after the label) would give 30-minute revisions and a run 40–70 minutes old.
+- Choose cutoffs on more than one window. The calibration window has 125 onsets against 403 in test.
