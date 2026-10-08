@@ -296,6 +296,97 @@ def predispatch_features_all(targets: pd.DatetimeIndex, runs: pd.DataFrame, real
     return out
 
 
+def on_the_hour_runs(runs: pd.DataFrame) -> pd.DataFrame:
+    """Passes 1 and 2 (runs labelled at :00), as used by the stage-1b ``pda_`` features."""
+    return runs.loc[runs["run_label"].dt.minute == 0]
+
+
+def _previous_run(meta: pd.DataFrame, back: pd.Timedelta) -> pd.DataFrame:
+    """For each run, the latest run labelled at least ``back`` earlier (label and availability)."""
+    left = meta[["run_label"]].assign(key=meta["run_label"] - back).sort_values("key")
+    right = meta[["run_label", "available_at"]].rename(columns={"run_label": "prev_label", "available_at": "prev_available_at"})
+    got = pd.merge_asof(left, right.sort_values("prev_label"), left_on="key", right_on="prev_label", direction="backward")
+    return got.set_index("run_label")[["prev_label", "prev_available_at"]]
+
+
+def predispatch_features_half(targets: pd.DatetimeIndex, runs: pd.DataFrame, realised: pd.DataFrame) -> pd.DataFrame:
+    """``pdh_`` features from every half-hourly run, with 30 and 60 minute revisions.
+
+    L is the latest run with ``available_at <= origin`` (at most 4 h old). For
+    the 30 minute revision P30 is the latest run labelled at least 30 min before
+    L and at most 1 h before it; for the 60 minute revision P60 is the latest run
+    labelled at least 60 min before L and at most 2 h before it. Each previous
+    run is used only if it was itself available by the origin. Levels and the
+    within-run 1 h change are as for ``pda_``. ``pdh_run_age_min`` is for
+    coverage reports only.
+    """
+    targets = pd.DatetimeIndex(targets).astype("datetime64[ns]")
+    out = pd.DataFrame(index=targets)
+    if runs.empty:
+        return out
+    meta = runs.groupby("run_label", as_index=False)["available_at"].max().sort_values("run_label")
+    origins = pd.DataFrame({"target": targets, "origin": targets - HORIZON}).sort_values("origin")
+    chosen = pd.merge_asof(origins, meta.sort_values("available_at"), left_on="origin", right_on="available_at",
+                           direction="backward")
+    chosen = chosen.set_index("target").reindex(targets)
+    stale = (chosen["origin"] - chosen["run_label"]) > PD_MAX_AGE
+    chosen.loc[stale, ["run_label", "available_at"]] = pd.NaT
+    label = chosen["run_label"]
+    slot = targets.floor("30min")
+    wide = runs.set_index(["run_label", "interval"])
+    fields = list(PD_FIELDS.values())
+
+    def lookup(labels, when) -> pd.DataFrame:
+        key = pd.MultiIndex.from_arrays([pd.DatetimeIndex(labels), pd.DatetimeIndex(when)])
+        got = wide.reindex(key)[fields]
+        got.index = targets
+        return got
+
+    now, nxt = lookup(label, slot), lookup(label, slot + pd.Timedelta(minutes=30))
+    ahead = [lookup(label, slot + pd.Timedelta(minutes=30 * k))["price"] for k in range(0, 5)]
+    earlier = lookup(label, np.maximum((slot - pd.Timedelta(hours=1)).to_numpy(), label.to_numpy()))
+    p = "pdh_"
+    out[p + "price_t"] = now["price"]
+    out[p + "price_next"] = nxt["price"]
+    out[p + "price_max2h"] = pd.concat(ahead, axis=1).max(axis=1)
+    out[p + "price_minus_last"] = now["price"] - realised["mcp_lag_5min"]
+    out[p + "energy_req_t"] = now["energy_req"]
+    out[p + "energy_req_minus_last_demand"] = now["energy_req"] - realised["demand_lag_5min"]
+    out[p + "energy_req_ramp30"] = nxt["energy_req"] - now["energy_req"]
+    out[p + "headroom"] = now["in_service_cap"] - now["energy_req"]
+    out[p + "available_cap"] = now["available_cap"]
+    out[p + "cont_raise_margin"] = now["cont_raise_avail"] - now["cont_raise_req"]
+    out[p + "reg_raise_price"] = now["reg_raise_price"]
+    out[p + "cont_raise_price"] = now["cont_raise_price"]
+    out[p + "energy_deficit"] = now["energy_deficit"]
+    out[p + "price_change_1h"] = now["price"] - earlier["price"]
+    out[p + "energy_req_change_1h"] = now["energy_req"] - earlier["energy_req"]
+    out[p + "run_age_min"] = (chosen["origin"] - label).dt.total_seconds() / 60.0
+    out[p + "available_at"] = chosen["available_at"]
+    for tag, back, gap in (("rev30", pd.Timedelta(minutes=30), pd.Timedelta(hours=1)),
+                           ("rev60", pd.Timedelta(minutes=60), pd.Timedelta(hours=2))):
+        prev_meta = _previous_run(meta, back)
+        prev = prev_meta.reindex(label)
+        prev.index = targets
+        bad = (prev["prev_available_at"] > chosen["origin"]) | ((label - prev["prev_label"]) > gap)
+        prev.loc[bad.fillna(True), ["prev_label", "prev_available_at"]] = pd.NaT
+        before = lookup(prev["prev_label"], slot)
+        before_ahead = [lookup(prev["prev_label"], slot + pd.Timedelta(minutes=30 * k))["price"] for k in range(0, 5)]
+        cols = [f"{p}{tag}_price_t", f"{p}{tag}_price_max2h", f"{p}{tag}_energy_req_t", f"{p}{tag}_headroom_t"]
+        out[cols[0]] = now["price"] - before["price"]
+        out[cols[1]] = out[p + "price_max2h"] - pd.concat(before_ahead, axis=1).max(axis=1, skipna=False)
+        out[cols[2]] = now["energy_req"] - before["energy_req"]
+        out[cols[3]] = out[p + "headroom"] - (before["in_service_cap"] - before["energy_req"])
+        out[f"{p}{tag}_prev_available_at"] = prev["prev_available_at"]
+        none = before["price"].isna()
+        out.loc[none, f"{p}{tag}_prev_available_at"] = pd.NaT
+        out.loc[none, cols] = np.nan
+    missing = now["price"].isna()
+    out.loc[missing, [c for c in out.columns if c.endswith("_available_at")]] = pd.NaT
+    out.loc[missing, [*EXTERNAL_PREDISPATCH_HALF, p + "run_age_min"]] = np.nan
+    return out
+
+
 # --------------------------------------------------------------------------- table
 
 
@@ -317,6 +408,16 @@ EXTERNAL_PREDISPATCH_ALL = [
     "pda_cont_raise_margin", "pda_reg_raise_price", "pda_cont_raise_price", "pda_energy_deficit",
     "pda_price_change_1h", "pda_energy_req_change_1h", *EXTERNAL_REVISION,
 ]
+# Stage 1c: every half-hourly run, revisions over 30 and 60 minutes.
+EXTERNAL_REVISION_HALF = [
+    f"pdh_{tag}_{name}" for tag in ("rev30", "rev60") for name in ("price_t", "price_max2h", "energy_req_t", "headroom_t")
+]
+EXTERNAL_PREDISPATCH_HALF = [
+    "pdh_price_t", "pdh_price_next", "pdh_price_max2h", "pdh_price_minus_last", "pdh_energy_req_t",
+    "pdh_energy_req_minus_last_demand", "pdh_energy_req_ramp30", "pdh_headroom", "pdh_available_cap",
+    "pdh_cont_raise_margin", "pdh_reg_raise_price", "pdh_cont_raise_price", "pdh_energy_deficit",
+    "pdh_price_change_1h", "pdh_energy_req_change_1h", *EXTERNAL_REVISION_HALF,
+]
 
 
 def build_external(ready: pd.DataFrame, weather: pd.DataFrame | None = None, runs: pd.DataFrame | None = None) -> pd.DataFrame:
@@ -328,8 +429,10 @@ def build_external(ready: pd.DataFrame, weather: pd.DataFrame | None = None, run
         table = wx
     else:
         pdx = predispatch_features(ready.index, even_hour_runs(runs), realised)
-        pda = predispatch_features_all(ready.index, runs, realised)
+        pda = predispatch_features_all(ready.index, on_the_hour_runs(runs), realised)
         table = wx.join(pdx).join(pda)
+        if (runs["run_label"].dt.minute == 30).any():
+            table = table.join(predispatch_features_half(ready.index, runs, realised))
     check_availability(table)
     return table
 
@@ -339,7 +442,8 @@ def predispatch_coverage(table: pd.DataFrame, runs: pd.DataFrame) -> pd.DataFram
     from scripts.forecast_design import split_mask
 
     split = split_mask(table.index)
-    sets = (("even_hour", "pd_", even_hour_runs(runs), "2h"), ("all_hourly", "pda_", runs, "1h"))
+    sets = (("even_hour", "pd_", even_hour_runs(runs), "2h"), ("all_hourly", "pda_", on_the_hour_runs(runs), "1h"),
+            ("half_hourly", "pdh_", runs, "30min"))
     rows = []
     for set_name, prefix, subset, step in sets:
         labels = pd.Series(subset["run_label"].unique())
@@ -366,9 +470,14 @@ def predispatch_coverage(table: pd.DataFrame, runs: pd.DataFrame) -> pd.DataFram
                 "run_age_min_p95": float(age.quantile(0.95)) if len(age) else np.nan,
                 "run_age_min_max": float(age.max()) if len(age) else np.nan,
                 "share_age_40_100": float(age.between(40, 100).mean()) if len(age) else np.nan,
+                "share_age_40_70": float(age.between(40, 70).mean()) if len(age) else np.nan,
             }
             if prefix == "pda_":
                 row["share_with_revision"] = float(block["pda_rev_price_t"].notna().mean())
+            if prefix == "pdh_":
+                row["share_with_revision"] = float(block["pdh_rev30_price_t"].notna().mean())
+                row["share_with_revision60"] = float(block["pdh_rev60_price_t"].notna().mean())
+
             rows.append(row)
     return pd.DataFrame(rows)
 

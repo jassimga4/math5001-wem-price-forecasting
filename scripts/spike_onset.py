@@ -31,7 +31,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.external_features import (  # noqa: E402
-    EXTERNAL_PREDISPATCH, EXTERNAL_PREDISPATCH_ALL, EXTERNAL_WEATHER, FEATURES_PATH, build_external,
+    EXTERNAL_PREDISPATCH, EXTERNAL_PREDISPATCH_ALL, EXTERNAL_PREDISPATCH_HALF, EXTERNAL_WEATHER, FEATURES_PATH,
+    build_external,
 )
 from scripts.forecast_design import INNER_VAL_START, TREE_FEATURES, slice_split, split_mask  # noqa: E402
 from scripts.metrics import crps_from_residual_samples  # noqa: E402
@@ -49,8 +50,9 @@ FEATURE_SETS = {
     "hurdle_weather": PANEL + EXTERNAL_WEATHER,
     "hurdle_weather_predispatch": PANEL + EXTERNAL_WEATHER + EXTERNAL_PREDISPATCH,  # even-hour runs (stage 1)
     "hurdle_weather_predispatch_all": PANEL + EXTERNAL_WEATHER + EXTERNAL_PREDISPATCH_ALL,  # hourly runs + revisions
+    "hurdle_weather_predispatch_half": PANEL + EXTERNAL_WEATHER + EXTERNAL_PREDISPATCH_HALF,  # half-hourly + 30/60 min revisions
 }
-EXTERNAL_PREFIXES = ("pd_", "pda_", "wx_")
+EXTERNAL_PREFIXES = ("pd_", "pda_", "pdh_", "wx_")
 CLF_PARAMS = dict(
     n_estimators=1500, learning_rate=0.03, num_leaves=31, min_child_samples=200, subsample=0.8,
     subsample_freq=1, colsample_bytree=0.8, reg_lambda=1.0, verbose=-1, random_state=7,
@@ -288,12 +290,12 @@ BOOT_SUBSETS = ("all", "tail", "onset", "fresh_onset")
 def bootstrap_table(test, per_row):
     """Model minus baseline on test, with 90% moving-block (1 day) intervals.
 
-    Baselines are the regime switch (stage 1) and persistence (stage 1b). Each
+    Baselines are the regime switch (stage 1), persistence (stage 1b) and the panel-only hurdle (stage 1c). Each
     pair uses the same seed, so the regime-switch ranges match stage 1.
     """
     y = test["y"].to_numpy(float)
     out = []
-    for baseline in ("regime_switch", "persistence"):
+    for baseline in ("regime_switch", "persistence", "hurdle_panel"):
         base_hat, base_crps = per_row[(baseline, "test")]
         for (name, split), (yhat, crps) in per_row.items():
             if split != "test" or name == baseline:
@@ -325,7 +327,7 @@ def run(frame, spike, floor):
     test = cal_test.loc[~is_cal].copy()
     cal_pos, test_pos = positions[selectable], positions[~is_cal]
 
-    rows, selections, model_meta, detail = [], [], {}, {}
+    rows, selections, model_meta, detail, gains = [], [], {}, {}, []
     baselines, plain, per_row = {}, {}, {}
     for name, column in (("persistence", "persistence"), ("lightgbm", "lightgbm"), ("regime_switch", "regime")):
         for split, block, pos in (("calibration", cal, cal_pos), ("test", test, test_pos)):
@@ -431,7 +433,13 @@ def run(frame, spike, floor):
         selections.append((grid, mgrid))
         importance = pd.Series(clf_up.booster_.feature_importance("gain"), index=features).sort_values(ascending=False)
         model_meta[set_name]["top_up_features_by_gain"] = importance.head(15).round(1).to_dict()
+        importance_dn = pd.Series(clf_dn.booster_.feature_importance("gain"), index=features).sort_values(ascending=False)
+        model_meta[set_name]["top_down_features_by_gain"] = importance_dn.head(15).round(1).to_dict()
+        for side, imp in (("up", importance), ("down", importance_dn)):
+            gains.append(pd.DataFrame({"model": set_name, "classifier": side, "feature": imp.index, "gain": imp.to_numpy(),
+                                       "share": imp.to_numpy() / imp.sum(), "rank": np.arange(1, len(imp) + 1)}))
     boot = bootstrap_table(test, per_row)
+    pd.concat(gains, ignore_index=True).to_csv(OUT / "spike_stage1_feature_gain.csv", index=False)
     return pd.DataFrame(rows), selections, model_meta, detail, boot
 
 
