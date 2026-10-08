@@ -438,3 +438,144 @@ Fresher pre-dispatch information does not appear to carry the 5-minute onset sig
 
 - issue the regime switch as the point forecast, and use the panel-only hurdle for the distribution and spike alerts;
 - look for 5-minute inputs published before the origin, for example the dispatch-interval outcome of the previous interval beyond MCP: binding constraints, FCESS shortfalls, and the change in available capacity between consecutive dispatch runs.
+
+## Stage A: recent price-path features
+
+### Features (`path_`, 9; `scripts/price_path.py`)
+
+All are built from 5-minute prices labelled T−5 or earlier, so only prices realised by the origin are used: lags k = 1 and up, where k = 1 is `mcp_lag_5min`. There are no new MCP lags and nothing from the target interval. The near-spike band comes from train only: q90 = 143.11 and q10 = −33.14.
+
+- `path_near_up_30` and `path_near_up_60`: the number of prices at or above the train q90 in the last 30 and 60 minutes. `path_near_down_30` and `path_near_down_60` count prices at or below q10.
+- `path_slope_15`: the least-squares slope of the last four prices, in $ per 5 minutes.
+- `path_climb_run` and `path_fall_run`: the number of consecutive rises or falls ending at the last price (capped at 24).
+- `path_std_30`: the standard deviation over the last 30 minutes.
+- `path_max60_minus_last`: the highest price in the last 60 minutes minus the last price.
+
+`tests/test_price_path.py` has 5 leakage and behaviour tests:
+
+- setting the target-interval price and every later price to 1e6 leaves all features unchanged;
+- dropping prices after the origin changes nothing;
+- a known ramp gives the expected slope, run and counts;
+- the feature names avoid the banned contemporaneous list and `mcp_lag`.
+
+As a mutation check, shifting by k − 1 instead of k makes 3 of the tests fail.
+
+### Row and cutoffs
+
+`hurdle_panel_path` is the panel-only hurdle plus the 9 path features. It uses the same LightGBM classifiers and size models, and the same grids and rules. Earlier rows are unchanged to within 5e-9.
+
+Cutoffs were chosen on calibration only:
+
+- point: up 0.5, down 0.2;
+- mixture: up 0.0025, down 0.02;
+- detection: 0.22 (calibration F1 0.426, against 0.24 for panel only).
+
+| Split | Model | MAE | CRPS | Tail MAE | Tail CRPS | First-interval MAE | First-interval CRPS | Precision | Recall | AP |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Calibration | Persistence | 5.562 | 4.794 | 65.35 | 62.76 | 108.26 | 102.97 | – | 0.00 | – |
+| Calibration | Hurdle, panel only | 5.437 | 4.511 | 64.08 | 55.97 | 102.14 | 75.34 | 0.36 | 0.46 | 0.338 |
+| Calibration | **Hurdle, panel + path** | 5.445 | 4.507 | 64.40 | 55.91 | 103.39 | 75.09 | 0.37 | 0.50 | 0.373 |
+| Test | Persistence | 4.745 | 4.176 | 16.00 | 14.77 | 45.83 | 42.50 | – | 0.00 | – |
+| Test | Hurdle, panel only | 4.640 | 3.917 | 15.94 | 13.29 | 43.73 | 30.37 | 0.32 | 0.56 | 0.330 |
+| Test | **Hurdle, panel + path** | 4.689 | 3.914 | 16.01 | 13.20 | 44.27 | 29.66 | 0.32 | 0.61 | 0.364 |
+
+Test bootstrap ranges for panel + path (model minus baseline; 1-day blocks, 90%, 1,000 draws):
+
+| Baseline | Overall MAE | Tail CRPS | First-interval MAE | First-interval CRPS |
+| --- | ---: | ---: | ---: | ---: |
+| Persistence | −0.06 [−0.11, −0.01] | −1.56 [−2.02, −1.19] | −1.57 [−4.81, +1.16] | −12.84 [−15.83, −10.24] |
+| Regime switch | +0.04 [−0.00, +0.08] | −1.50 [−1.88, −1.18] | −0.96 [−4.04, +1.71] | −11.91 [−14.72, −9.40] |
+| Hurdle, panel only | +0.05 [+0.02, +0.08] | −0.09 [−0.14, −0.04] | +0.53 [−1.20, +2.23] | −0.70 [−1.14, −0.33] |
+
+Against panel only, fresh-onset CRPS improves by −1.01 [−1.74, −0.37].
+
+### Feature gain
+
+The path features rank in the top 15.
+
+- **Up classifier:** `path_near_up_30` is 3rd (3.4% of gain), `path_std_30` 4th, `path_slope_15` 5th, `path_max60_minus_last` 10th and `path_near_up_60` 13th. `path_climb_run` is 19th.
+- **Down classifier:** `path_slope_15` is 5th, `path_std_30` 6th and `path_max60_minus_last` 15th.
+
+The last complete real-time price still dominates.
+
+### Verdict
+
+Keep the path features. The decision was made on calibration: they improved CRPS, tail CRPS, first-interval CRPS, recall and AP (0.338 to 0.373), while overall and tail MAE were slightly worse.
+
+Test agrees on the probabilistic side. Tail CRPS and first-interval CRPS improve over panel only with ranges clear of zero, and AP rises from 0.330 to 0.364. The cost is a small, significant rise in overall MAE (+0.05) as the point override fires more often (0.19% of test intervals against 0.08%). The gains are small next to the hurdle's gain over persistence.
+
+The set used in stage B is panel + path.
+
+## Stage B: other spike classifiers
+
+All Stage B rows use the panel + path features. Only the up and down crossing classifiers change. The LightGBM quantile size models, the mixture, the conformal residuals and the cutoff rules and grids are kept as they were. No adapter was needed, because every classifier exposes `predict_proba`.
+
+Capacity is chosen on the inner validation window (2025-07-01 to 2025-09-30, inside train) by log loss, then each model is refitted on all train rows from 2024-03-01, as for LightGBM.
+
+- **XGBoost** (`xgboost>=3.4,<4`, pinned in `requirements.txt`): hist trees with depth 6, learning rate 0.03, subsample and colsample 0.8, L2 1. Early stopping after 200 rounds chose 143 trees for up and 1,493 for down.
+- **HistGradientBoosting** (scikit-learn): 31 leaves, minimum leaf 200, learning rate 0.05, L2 1. Iterations come from {50, 100, 200, 400, 800}: 100 for up and 800 for down. 800 is the top of the grid.
+- **Logistic regression:** median imputation with missing-value indicators, standardisation, and C from {0.01, 0.1, 1}. Up chose 0.1 and down chose 1.
+
+Earlier rows, including the LightGBM panel + path row, are unchanged to within 3e-11. Their bootstrap pairs are identical.
+
+### Cutoffs (calibration only)
+
+| Classifier | Point (up, down) | Mixture (up, down) | Detection | Calibration F1 |
+| --- | --- | --- | ---: | ---: |
+| LightGBM | 0.5, 0.2 | 0.0025, 0.02 | 0.22 | 0.426 |
+| XGBoost | 0.9, 0.2 | 0.0025, 0.02 | 0.24 | 0.458 |
+| HistGradientBoosting | 0.5, 0.1 | 0.0025, 0.05 | 0.24 | 0.429 |
+| Logistic | 0.6, 0.1 | 0.0025, 0.01 | 0.16 | 0.316 |
+
+The XGBoost point override never fires on calibration or test, so its point forecast equals the regime switch.
+
+### Results
+
+| Split | Model | MAE | CRPS | Tail MAE | Tail CRPS | First-interval MAE | First-interval CRPS | Precision | Recall | AP |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Calibration | Persistence | 5.562 | 4.794 | 65.35 | 62.76 | 108.26 | 102.97 | – | 0.00 | – |
+| Calibration | Hurdle, panel only (LightGBM) | 5.437 | 4.511 | 64.08 | 55.97 | 102.14 | 75.34 | 0.36 | 0.46 | 0.338 |
+| Calibration | Panel + path, LightGBM | 5.445 | 4.507 | 64.40 | 55.91 | 103.39 | 75.09 | 0.37 | 0.50 | 0.373 |
+| Calibration | Panel + path, XGBoost | 5.422 | 4.508 | 64.96 | 55.67 | 105.57 | 74.16 | 0.42 | 0.50 | 0.391 |
+| Calibration | **Panel + path, HistGradientBoosting** | 5.458 | 4.508 | 64.93 | 55.47 | 105.46 | 73.36 | 0.38 | 0.50 | 0.389 |
+| Calibration | Panel + path, logistic | 5.434 | 4.530 | 64.03 | 58.41 | 101.91 | 84.92 | 0.38 | 0.27 | 0.247 |
+| Test | Persistence | 4.745 | 4.176 | 16.00 | 14.77 | 45.83 | 42.50 | – | 0.00 | – |
+| Test | Hurdle, panel only (LightGBM) | 4.640 | 3.917 | 15.94 | 13.29 | 43.73 | 30.37 | 0.32 | 0.56 | 0.330 |
+| Test | Panel + path, LightGBM | 4.689 | 3.914 | 16.01 | 13.20 | 44.27 | 29.66 | 0.32 | 0.61 | 0.364 |
+| Test | Panel + path, XGBoost | 4.650 | 3.912 | 16.13 | 13.18 | 45.22 | 29.44 | 0.33 | 0.54 | 0.354 |
+| Test | **Panel + path, HistGradientBoosting** | 4.695 | 3.915 | 15.81 | 13.13 | 42.68 | 29.08 | 0.32 | 0.56 | 0.346 |
+| Test | Panel + path, logistic | 4.635 | 3.947 | 15.94 | 13.82 | 43.67 | 34.54 | 0.29 | 0.29 | 0.250 |
+
+### Test bootstrap ranges (model minus baseline; 1-day blocks, 90%, 1,000 draws)
+
+Against the LightGBM panel + path row:
+
+| Classifier | Overall MAE | Tail CRPS | First-interval MAE | First-interval CRPS |
+| --- | ---: | ---: | ---: | ---: |
+| XGBoost | −0.04 [−0.08, +0.00] | −0.03 [−0.07, +0.01] | +0.96 [−1.71, +4.04] | −0.22 [−0.52, +0.08] |
+| HistGradientBoosting | +0.01 [−0.01, +0.03] | −0.07 [−0.11, −0.04] | −1.58 [−3.57, −0.17] | −0.58 [−0.90, −0.30] |
+| Logistic | −0.05 [−0.09, −0.02] | +0.61 [+0.47, +0.79] | −0.60 [−2.12, +1.05] | +4.88 [+3.84, +6.08] |
+
+Against persistence:
+
+| Classifier | Overall MAE | Tail CRPS | First-interval MAE | First-interval CRPS |
+| --- | ---: | ---: | ---: | ---: |
+| LightGBM | −0.06 [−0.11, −0.01] | −1.56 [−2.02, −1.19] | −1.57 [−4.81, +1.16] | −12.84 [−15.83, −10.24] |
+| XGBoost | −0.10 [−0.12, −0.07] | −1.59 [−2.05, −1.22] | −0.61 [−0.86, −0.38] | −13.06 [−16.07, −10.50] |
+| HistGradientBoosting | −0.05 [−0.11, +0.01] | −1.64 [−2.10, −1.25] | −3.15 [−6.63, +0.02] | −13.42 [−16.72, −10.70] |
+| Logistic | −0.11 [−0.15, −0.07] | −0.95 [−1.40, −0.60] | −2.16 [−4.86, −0.15] | −7.96 [−11.09, −5.50] |
+
+Ranges against the regime switch and against panel only are in `spike_stage1_bootstrap.csv`.
+
+### Verdict
+
+HistGradientBoosting is the best classifier, by a small margin.
+
+- **Calibration:** it had the lowest tail CRPS (55.47) and first-interval CRPS (73.36).
+- **Test:** it is the only classifier that beats the LightGBM row with ranges clear of zero on tail CRPS (−0.07), first-interval CRPS (−0.58), first-interval MAE (−1.58) and tail MAE (−0.20 [−0.45, −0.02]). Overall MAE and CRPS are no different.
+- **XGBoost** is level with LightGBM. It has the best calibration AP and F1, but on test its differences from LightGBM all cross zero except fresh-onset CRPS (−0.49 [−0.88, −0.12]). Its point forecast is the regime switch, because the calibrated point cutoff never fires.
+- **Logistic regression** is clearly worse on the distribution (first-interval CRPS +4.9) and on detection (AP 0.25). The ranking is a non-linear problem.
+
+All of these gains are small next to the gap between any tree hurdle and persistence (first-interval CRPS about −13). The test AP order (LightGBM 0.364, XGBoost 0.354, HistGradientBoosting 0.346) does not match calibration, so the detection differences are noise.
+
+HistGradientBoosting's down classifier chose 800 iterations, the top of its grid. A wider grid, chosen on the inner validation window, is a cheap follow-up.
