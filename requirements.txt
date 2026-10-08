@@ -7,6 +7,7 @@ pyarrow>=14.0
 # Modelling
 scikit-learn>=1.4
 lightgbm>=4.3
+xgboost>=3.4,<4  # stage B spike classifier comparison
 statsmodels>=0.14
 shap>=0.46
 

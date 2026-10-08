@@ -54,9 +54,17 @@ FEATURE_SETS = {
     "hurdle_weather_predispatch_all": PANEL + EXTERNAL_WEATHER + EXTERNAL_PREDISPATCH_ALL,  # hourly runs + revisions
     "hurdle_weather_predispatch_half": PANEL + EXTERNAL_WEATHER + EXTERNAL_PREDISPATCH_HALF,  # half-hourly + 30/60 min revisions
     "hurdle_panel_path": PANEL + PATH_FEATURES,  # stage A: recent price-path summaries
+    # Stage B: same features as the stage A winner (chosen on calibration), other crossing classifiers.
+    "hurdle_panel_path_xgboost": PANEL + PATH_FEATURES,
+    "hurdle_panel_path_hist_gb": PANEL + PATH_FEATURES,
+    "hurdle_panel_path_logistic": PANEL + PATH_FEATURES,
 }
-# Classifier per row; every row not listed uses LightGBM (stages 1 to 1c).
-CLASSIFIER = {}
+# Classifier per row; every row not listed uses LightGBM (stages 1 to 1c and A). Size models stay LightGBM.
+CLASSIFIER = {
+    "hurdle_panel_path_xgboost": "xgboost",
+    "hurdle_panel_path_hist_gb": "hist_gb",
+    "hurdle_panel_path_logistic": "logistic",
+}
 EXTERNAL_PREFIXES = ("pd_", "pda_", "pdh_", "wx_")
 CLF_PARAMS = dict(
     n_estimators=1500, learning_rate=0.03, num_leaves=31, min_child_samples=200, subsample=0.8,
@@ -366,17 +374,20 @@ def block_bootstrap_mean_diff(diff, mask, block=288, n_boot=1000, seed=42):
 
 
 BOOT_SUBSETS = ("all", "tail", "onset", "fresh_onset")
+# Stage B adds the LightGBM hurdle on the stage A feature set as a baseline for the other classifiers.
+BOOT_BASELINES = ("regime_switch", "persistence", "hurdle_panel", "hurdle_panel_path")
 
 
 def bootstrap_table(test, per_row):
     """Model minus baseline on test, with 90% moving-block (1 day) intervals.
 
-    Baselines are the regime switch (stage 1), persistence (stage 1b) and the panel-only hurdle (stage 1c). Each
+    Baselines are the regime switch (stage 1), persistence (stage 1b), the panel-only hurdle (stage 1c) and the
+    LightGBM hurdle with price-path features (stage B). Each
     pair uses the same seed, so the regime-switch ranges match stage 1.
     """
     y = test["y"].to_numpy(float)
     out = []
-    for baseline in ("regime_switch", "persistence", "hurdle_panel"):
+    for baseline in BOOT_BASELINES:
         base_hat, base_crps = per_row[(baseline, "test")]
         for (name, split), (yhat, crps) in per_row.items():
             if split != "test" or name == baseline:
