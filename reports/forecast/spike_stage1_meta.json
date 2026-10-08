@@ -2,6 +2,10 @@
   "fit_window": "2024-03-01 to train end; early stopping on 2025-07-01 onwards",
   "train_spike": 170.318,
   "train_floor": -54.19,
+  "price_path_near_band": {
+    "near_up_train_q90": 143.11,
+    "near_down_train_q10": -33.14
+  },
   "regime_rule": "abs_30min_move_q90",
   "selection": "calibration rows after the first conformal window; point: min tail MAE with overall MAE within 1% of the regime switch; mixture: min tail CRPS with overall CRPS within 1% of the regime switch; detection: max F1",
   "models": {
@@ -27,6 +31,7 @@
         "move_30",
         "move_60"
       ],
+      "classifier": "lightgbm",
       "classifier_up": {
         "iterations": 145,
         "positives": 2185,
@@ -126,6 +131,7 @@
         "wx_wind_cf_d60",
         "wx_wind_cf_d180"
       ],
+      "classifier": "lightgbm",
       "classifier_up": {
         "iterations": 174,
         "positives": 2185,
@@ -297,6 +303,7 @@
         "pd_energy_deficit",
         "pd_run_age_min"
       ],
+      "classifier": "lightgbm",
       "classifier_up": {
         "iterations": 175,
         "positives": 2185,
@@ -515,6 +522,7 @@
         "pda_rev_energy_req_t",
         "pda_rev_headroom_t"
       ],
+      "classifier": "lightgbm",
       "classifier_up": {
         "iterations": 193,
         "positives": 2185,
@@ -752,6 +760,7 @@
         "pdh_rev60_energy_req_t",
         "pdh_rev60_headroom_t"
       ],
+      "classifier": "lightgbm",
       "classifier_up": {
         "iterations": 152,
         "positives": 2185,
@@ -937,6 +946,98 @@
         "wx_wind_cf_d60": 1585.0,
         "wx_wind_cf_t": 1566.5,
         "pdh_rev60_energy_req_t": 1552.0
+      }
+    },
+    "hurdle_panel_path": {
+      "features": [
+        "mcp_lag_5min",
+        "mcp_lag_30min",
+        "mcp_lag_60min",
+        "mcp_lag_1d",
+        "demand_lag_5min",
+        "dpv_lag_5min",
+        "withdrawal_lag_5min",
+        "cr_raise_lag_5min",
+        "cr_lower_lag_5min",
+        "reg_raise_lag_5min",
+        "reg_lower_lag_5min",
+        "rtp_last_complete",
+        "stem_price",
+        "stem_imbalance",
+        "hour",
+        "dow",
+        "month",
+        "move_30",
+        "move_60",
+        "path_near_up_30",
+        "path_near_up_60",
+        "path_near_down_30",
+        "path_near_down_60",
+        "path_slope_15",
+        "path_climb_run",
+        "path_fall_run",
+        "path_std_30",
+        "path_max60_minus_last"
+      ],
+      "classifier": "lightgbm",
+      "classifier_up": {
+        "iterations": 150,
+        "positives": 2185,
+        "rows": 152263
+      },
+      "classifier_down": {
+        "iterations": 1500,
+        "positives": 634,
+        "rows": 152263
+      },
+      "size_rows": {
+        "up": 2185,
+        "down": 634
+      },
+      "point_cutoffs": {
+        "up": 0.5,
+        "down": 0.2
+      },
+      "mixture_cutoffs": {
+        "up": 0.0025,
+        "down": 0.02
+      },
+      "detection_cutoff": 0.22,
+      "external_non_null_share": {},
+      "calibration_detection_f1": 0.4261168384879725,
+      "top_up_features_by_gain": {
+        "rtp_last_complete": 116245.1,
+        "mcp_lag_5min": 16208.6,
+        "path_near_up_30": 6172.4,
+        "path_std_30": 4280.9,
+        "path_slope_15": 4129.3,
+        "mcp_lag_30min": 2835.4,
+        "reg_raise_lag_5min": 2807.1,
+        "cr_raise_lag_5min": 2476.4,
+        "dpv_lag_5min": 2464.4,
+        "path_max60_minus_last": 2447.7,
+        "stem_price": 2342.5,
+        "mcp_lag_60min": 2230.7,
+        "path_near_up_60": 2151.0,
+        "demand_lag_5min": 2131.5,
+        "move_30": 2046.2
+      },
+      "top_down_features_by_gain": {
+        "rtp_last_complete": 37034.2,
+        "mcp_lag_5min": 15378.0,
+        "reg_lower_lag_5min": 11832.8,
+        "withdrawal_lag_5min": 5491.5,
+        "path_slope_15": 4646.6,
+        "path_std_30": 4368.0,
+        "dpv_lag_5min": 4141.4,
+        "demand_lag_5min": 3987.0,
+        "stem_imbalance": 3966.5,
+        "mcp_lag_1d": 3799.8,
+        "move_60": 3206.9,
+        "stem_price": 3010.3,
+        "cr_lower_lag_5min": 2964.4,
+        "month": 2720.5,
+        "path_max60_minus_last": 2685.5
       }
     }
   }
