@@ -17,9 +17,15 @@ scripts/point_models.py                 # persistence, ridge, and LightGBM
 scripts/conformal.py                    # sliding-window and fixed split conformal intervals
 scripts/qra.py                          # quantile regression averaging comparison
 scripts/regime_switch.py                # calibration-chosen LightGBM / persistence gate
+scripts/pull_open_meteo.py              # archived day-ahead weather forecasts (Open-Meteo Previous Runs)
+scripts/pull_aemo_predispatch.py        # system-level fields from AEMO WEM pre-dispatch runs
+scripts/external_features.py            # leakage-safe external features keyed to forecast origins
+scripts/spike_onset.py                  # stage-1 hurdle onset model vs persistence, LightGBM, regime switch
+data/external/                          # external pulls, one README per source
 scripts/experiment.py                   # fit point models, conformal tables, and QRA
 scripts/metrics.py                      # MAE, pinball, interval scores, and CRPS
-docs/spike_forecast_next_steps.md       # onset-model plan; new series are not in the panel yet
+docs/spike_forecast_next_steps.md       # onset-model plan
+docs/spike_stage1_results.md            # stage-1 sources, availability rules and results
 notebooks/00_load_panel.ipynb            # load the processed panel
 notebooks/01_eda_correlation.ipynb       # descriptive EDA (not used to tune the test set)
 notebooks/02_baseline_models.ipynb       # ex-ante 5-minute baselines
@@ -129,6 +135,20 @@ Quantile regression averaging is a comparison, not a replacement for the absolut
 `python scripts/regime_switch.py` does not refit LightGBM. On late calibration it chooses a gate: persistence if the absolute 30-minute move is at least $32.48, otherwise the saved LightGBM forecast. The frozen 7-day absolute conformal fence is applied to that switched centre. Test scores are in `reports/forecast/regime_cps_comparison.csv`. The switch improves test MAE from 4.75 to 4.65 and empirical CRPS from 4.03 to 3.98, and it closes most of the tail gap to persistence. It is not an onset model.
 
 `docs/spike_forecast_next_steps.md` is the plan for the spike piece: pre-dispatch demand, projected DPV, outages known by the origin, and a Bureau forecast, then a hurdle or pinball model beside the current tree. Those series are not in the panel yet. QRA stays the blend benchmark, not the spike method.
+
+## Spike stage 1: external data and an onset model
+
+`data/external/` holds archived day-ahead weather forecasts (Open-Meteo, ECMWF and GFS) and an extract of AEMO WEM pre-dispatch runs. Each folder has a README with the URL, time zone and availability rule. `scripts/external_features.py` uses a value only if it was published by the forecast origin. `tests/test_external_features.py` checks that, including that changing anything published after the origin cannot change a feature. `scripts/spike_onset.py` fits a hurdle model on train, picks its cutoffs on calibration and scores test once. Results and caveats are in `docs/spike_stage1_results.md`.
+
+```bash
+python scripts/pull_open_meteo.py                  # weather (cached responses are reused)
+python scripts/pull_aemo_predispatch.py --pass 1   # slow: about 1 h for the even-hour runs
+python scripts/pull_aemo_predispatch.py --consolidate
+python -m unittest tests/test_external_features.py
+python scripts/spike_onset.py
+```
+
+The onset model needs `remotezip` for the pre-dispatch pull only. Without the per-day extracts it reads the committed consolidated file.
 
 If you still see `Missing optional dependency 'pyarrow'`, the notebook or terminal is using a different Python:
 

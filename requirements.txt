@@ -10,6 +10,10 @@ lightgbm>=4.3
 statsmodels>=0.14
 shap>=0.46
 
+# External data pulls (spike stage 1)
+requests>=2.31
+remotezip>=0.12
+
 # Visualisation
 matplotlib>=3.8
 seaborn>=0.13

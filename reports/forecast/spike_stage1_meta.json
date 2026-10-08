@@ -1,0 +1,249 @@
+{
+  "fit_window": "2024-03-01 to train end; early stopping on 2025-07-01 onwards",
+  "train_spike": 170.318,
+  "train_floor": -54.19,
+  "regime_rule": "abs_30min_move_q90",
+  "selection": "calibration rows after the first conformal window; point: min tail MAE with overall MAE within 1% of the regime switch; mixture: min tail CRPS with overall CRPS within 1% of the regime switch; detection: max F1",
+  "models": {
+    "hurdle_panel": {
+      "features": [
+        "mcp_lag_5min",
+        "mcp_lag_30min",
+        "mcp_lag_60min",
+        "mcp_lag_1d",
+        "demand_lag_5min",
+        "dpv_lag_5min",
+        "withdrawal_lag_5min",
+        "cr_raise_lag_5min",
+        "cr_lower_lag_5min",
+        "reg_raise_lag_5min",
+        "reg_lower_lag_5min",
+        "rtp_last_complete",
+        "stem_price",
+        "stem_imbalance",
+        "hour",
+        "dow",
+        "month",
+        "move_30",
+        "move_60"
+      ],
+      "classifier_up": {
+        "iterations": 145,
+        "positives": 2185,
+        "rows": 152263
+      },
+      "classifier_down": {
+        "iterations": 1487,
+        "positives": 634,
+        "rows": 152263
+      },
+      "size_rows": {
+        "up": 2185,
+        "down": 634
+      },
+      "point_cutoffs": {
+        "up": 0.5,
+        "down": 0.2
+      },
+      "mixture_cutoffs": {
+        "up": 0.02,
+        "down": 0.02
+      },
+      "detection_cutoff": 0.24,
+      "calibration_detection_f1": 0.4084507042253521,
+      "top_up_features_by_gain": {
+        "rtp_last_complete": 115369.0,
+        "mcp_lag_5min": 20354.4,
+        "mcp_lag_30min": 6750.4,
+        "reg_raise_lag_5min": 3844.0,
+        "mcp_lag_60min": 2989.9,
+        "move_30": 2890.0,
+        "cr_raise_lag_5min": 2838.7,
+        "dpv_lag_5min": 2816.6,
+        "stem_price": 2425.1,
+        "demand_lag_5min": 2320.5,
+        "withdrawal_lag_5min": 2177.1,
+        "move_60": 1893.3,
+        "mcp_lag_1d": 1771.8,
+        "stem_imbalance": 1368.2,
+        "hour": 932.1
+      }
+    },
+    "hurdle_weather": {
+      "features": [
+        "mcp_lag_5min",
+        "mcp_lag_30min",
+        "mcp_lag_60min",
+        "mcp_lag_1d",
+        "demand_lag_5min",
+        "dpv_lag_5min",
+        "withdrawal_lag_5min",
+        "cr_raise_lag_5min",
+        "cr_lower_lag_5min",
+        "reg_raise_lag_5min",
+        "reg_lower_lag_5min",
+        "rtp_last_complete",
+        "stem_price",
+        "stem_imbalance",
+        "hour",
+        "dow",
+        "month",
+        "move_30",
+        "move_60",
+        "wx_perth_temp_t",
+        "wx_perth_temp_d60",
+        "wx_perth_temp_max3h",
+        "wx_perth_cloud_t",
+        "wx_perth_cloud_d60",
+        "wx_perth_ghi_t",
+        "wx_perth_ghi_drop_5",
+        "wx_perth_ghi_drop_30",
+        "wx_perth_ghi_drop_60",
+        "wx_merredin_ghi_t",
+        "wx_wind_geraldton_t",
+        "wx_wind_badgingarra_t",
+        "wx_wind_merredin_t",
+        "wx_wind_albany_t",
+        "wx_wind_cf_t",
+        "wx_wind_cf_d60",
+        "wx_wind_cf_d180"
+      ],
+      "classifier_up": {
+        "iterations": 174,
+        "positives": 2185,
+        "rows": 152263
+      },
+      "classifier_down": {
+        "iterations": 1497,
+        "positives": 634,
+        "rows": 152263
+      },
+      "size_rows": {
+        "up": 2185,
+        "down": 634
+      },
+      "point_cutoffs": {
+        "up": 0.4,
+        "down": 0.2
+      },
+      "mixture_cutoffs": {
+        "up": 0.02,
+        "down": 0.02
+      },
+      "detection_cutoff": 0.22,
+      "calibration_detection_f1": 0.4013840830449827,
+      "top_up_features_by_gain": {
+        "rtp_last_complete": 114988.1,
+        "mcp_lag_5min": 17901.7,
+        "mcp_lag_30min": 8893.6,
+        "reg_raise_lag_5min": 3103.8,
+        "cr_raise_lag_5min": 2954.9,
+        "mcp_lag_60min": 2831.0,
+        "move_30": 2337.3,
+        "withdrawal_lag_5min": 2092.2,
+        "stem_price": 2001.1,
+        "move_60": 1997.9,
+        "dpv_lag_5min": 1795.8,
+        "demand_lag_5min": 1511.7,
+        "wx_wind_geraldton_t": 1393.4,
+        "mcp_lag_1d": 1334.1,
+        "wx_perth_cloud_t": 1249.3
+      }
+    },
+    "hurdle_weather_predispatch": {
+      "features": [
+        "mcp_lag_5min",
+        "mcp_lag_30min",
+        "mcp_lag_60min",
+        "mcp_lag_1d",
+        "demand_lag_5min",
+        "dpv_lag_5min",
+        "withdrawal_lag_5min",
+        "cr_raise_lag_5min",
+        "cr_lower_lag_5min",
+        "reg_raise_lag_5min",
+        "reg_lower_lag_5min",
+        "rtp_last_complete",
+        "stem_price",
+        "stem_imbalance",
+        "hour",
+        "dow",
+        "month",
+        "move_30",
+        "move_60",
+        "wx_perth_temp_t",
+        "wx_perth_temp_d60",
+        "wx_perth_temp_max3h",
+        "wx_perth_cloud_t",
+        "wx_perth_cloud_d60",
+        "wx_perth_ghi_t",
+        "wx_perth_ghi_drop_5",
+        "wx_perth_ghi_drop_30",
+        "wx_perth_ghi_drop_60",
+        "wx_merredin_ghi_t",
+        "wx_wind_geraldton_t",
+        "wx_wind_badgingarra_t",
+        "wx_wind_merredin_t",
+        "wx_wind_albany_t",
+        "wx_wind_cf_t",
+        "wx_wind_cf_d60",
+        "wx_wind_cf_d180",
+        "pd_price_t",
+        "pd_price_next",
+        "pd_price_max2h",
+        "pd_price_minus_last",
+        "pd_energy_req_t",
+        "pd_energy_req_minus_last_demand",
+        "pd_energy_req_ramp30",
+        "pd_headroom",
+        "pd_available_cap",
+        "pd_cont_raise_margin",
+        "pd_reg_raise_price",
+        "pd_cont_raise_price",
+        "pd_energy_deficit",
+        "pd_run_age_min"
+      ],
+      "classifier_up": {
+        "iterations": 174,
+        "positives": 2185,
+        "rows": 152263
+      },
+      "classifier_down": {
+        "iterations": 1497,
+        "positives": 634,
+        "rows": 152263
+      },
+      "size_rows": {
+        "up": 2185,
+        "down": 634
+      },
+      "point_cutoffs": {
+        "up": 0.4,
+        "down": 0.2
+      },
+      "mixture_cutoffs": {
+        "up": 0.02,
+        "down": 0.02
+      },
+      "detection_cutoff": 0.22,
+      "calibration_detection_f1": 0.4013840830449827,
+      "top_up_features_by_gain": {
+        "rtp_last_complete": 114988.1,
+        "mcp_lag_5min": 17901.7,
+        "mcp_lag_30min": 8893.6,
+        "reg_raise_lag_5min": 3103.8,
+        "cr_raise_lag_5min": 2954.9,
+        "mcp_lag_60min": 2831.0,
+        "move_30": 2337.3,
+        "withdrawal_lag_5min": 2092.2,
+        "stem_price": 2001.1,
+        "move_60": 1997.9,
+        "dpv_lag_5min": 1795.8,
+        "demand_lag_5min": 1511.7,
+        "wx_wind_geraldton_t": 1393.4,
+        "mcp_lag_1d": 1334.1,
+        "wx_perth_cloud_t": 1249.3
+      }
+    }
+  }
+}

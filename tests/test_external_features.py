@@ -1,0 +1,175 @@
+"""No external feature may use information published after its forecast origin."""
+
+import unittest
+from pathlib import Path
+import sys
+
+import numpy as np
+import pandas as pd
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.external_features import (
+    EXTERNAL_PREDISPATCH,
+    EXTERNAL_WEATHER,
+    PREDISPATCH_DIR,
+    WEATHER_LAG,
+    WEATHER_PATH,
+    build_external,
+    check_availability,
+    predispatch_available_at,
+    predispatch_features,
+    weather_at,
+    weather_features,
+)
+from scripts.forecast_design import CONTEMPORANEOUS_BANNED, HORIZON
+
+SITES = ("perth_metro", "geraldton", "badgingarra", "merredin", "albany")
+VARS = ("temperature_2m", "cloud_cover", "shortwave_radiation", "wind_speed_100m")
+
+
+def synthetic_weather(start="2025-01-01", hours=96, seed=0):
+    rng = np.random.default_rng(seed)
+    index = pd.date_range(start, periods=hours, freq="h")
+    cols = [f"{s}_{v}" for s in SITES for v in VARS]
+    return pd.DataFrame(rng.uniform(1, 20, size=(hours, len(cols))), index=index, columns=cols)
+
+
+def synthetic_runs(start="2025-01-01 00:00", n_runs=24, seed=0):
+    rng = np.random.default_rng(seed)
+    rows = []
+    for k in range(n_runs):
+        label = pd.Timestamp(start) + pd.Timedelta(minutes=30 * k)
+        issued = label + pd.Timedelta(minutes=15)
+        for j in range(16):
+            rows.append(
+                {
+                    "run_label": label,
+                    "issued": issued,
+                    "interval": label + pd.Timedelta(minutes=30 * j),
+                    "price": 1000.0 * k + j,  # encodes the run, so the chosen run is visible
+                    "reg_raise_price": rng.uniform(),
+                    "cont_raise_price": rng.uniform(),
+                    "energy_req": 1500 + rng.uniform(),
+                    "cont_raise_req": 200.0,
+                    "in_service_cap": 3800.0,
+                    "available_cap": 1700.0,
+                    "cont_raise_avail": 300.0,
+                    "energy_deficit": 0.0,
+                }
+            )
+    runs = pd.DataFrame(rows)
+    for col in ("run_label", "issued", "interval"):
+        runs[col] = runs[col].astype("datetime64[ns]")
+    runs["available_at"] = predispatch_available_at(runs["run_label"], runs["issued"])
+    return runs
+
+
+class WeatherAvailabilityTests(unittest.TestCase):
+    def test_interpolation_reads_only_the_bracketing_hours(self):
+        hourly = synthetic_weather()
+        when = pd.DatetimeIndex([pd.Timestamp("2025-01-02 10:20")])
+        values, read = weather_at(hourly, when)
+        col = hourly.columns[0]
+        a, b = hourly.loc["2025-01-02 10:00", col], hourly.loc["2025-01-02 11:00", col]
+        self.assertAlmostEqual(values.iloc[0][col], a + (b - a) / 3.0)
+        self.assertEqual(read.iloc[0], pd.Timestamp("2025-01-02 11:00"))
+
+    def test_every_row_is_available_at_its_origin(self):
+        hourly = synthetic_weather()
+        targets = pd.date_range("2025-01-02 00:05", "2025-01-03 12:00", freq="5min")
+        table = weather_features(targets, hourly)
+        self.assertTrue((table["wx_available_at"] <= table["forecast_origin"]).all())
+        check_availability(table)
+
+    def test_values_published_after_the_origin_cannot_change_a_feature(self):
+        hourly = synthetic_weather()
+        targets = pd.date_range("2025-01-02 00:05", "2025-01-03 12:00", freq="5min")
+        base = weather_features(targets, hourly)
+        for target in targets[::37]:
+            origin = target - HORIZON
+            changed = hourly.copy()
+            # Every value whose availability time (valid - 12 h) is after this origin.
+            late = changed.index - WEATHER_LAG > origin
+            changed.loc[late] = 1e6
+            again = weather_features(pd.DatetimeIndex([target]), changed)
+            pd.testing.assert_series_equal(
+                base.loc[target, EXTERNAL_WEATHER].astype(float),
+                again.loc[target, EXTERNAL_WEATHER].astype(float),
+                check_names=False,
+            )
+
+
+class PredispatchAvailabilityTests(unittest.TestCase):
+    def setUp(self):
+        self.runs = synthetic_runs()
+        self.targets = pd.date_range("2025-01-01 01:30", "2025-01-01 12:00", freq="5min")
+        self.realised = pd.DataFrame({"mcp_lag_5min": 50.0, "demand_lag_5min": 1500.0}, index=self.targets)
+
+    def test_uses_the_latest_run_available_at_the_origin(self):
+        table = predispatch_features(self.targets, self.runs, self.realised)
+        meta = self.runs.groupby("run_label")["available_at"].max()
+        for target, row in table.iterrows():
+            origin = target - HORIZON
+            usable = meta[meta <= origin]
+            if usable.empty:
+                self.assertTrue(np.isnan(row["pd_price_t"]))
+                continue
+            expected_run = list(meta.index).index(usable.index.max())
+            self.assertEqual(int(row["pd_price_t"] // 1000), expected_run)
+            self.assertLessEqual(row["pd_available_at"], origin)
+
+    def test_a_run_published_after_the_origin_cannot_change_a_feature(self):
+        base = predispatch_features(self.targets, self.runs, self.realised)
+        for target in self.targets[::11]:
+            origin = target - HORIZON
+            changed = self.runs.copy()
+            late = changed["available_at"] > origin
+            changed.loc[late, ["price", "energy_req", "in_service_cap"]] = 1e6
+            again = predispatch_features(pd.DatetimeIndex([target]), changed, self.realised.loc[[target]])
+            pd.testing.assert_series_equal(
+                base.loc[target, EXTERNAL_PREDISPATCH].astype(float),
+                again.loc[target, EXTERNAL_PREDISPATCH].astype(float),
+                check_names=False,
+            )
+
+    def test_late_issue_time_delays_availability(self):
+        label = pd.Series(pd.to_datetime(["2025-01-01 10:00"]))
+        issued = pd.Series(pd.to_datetime(["2025-01-01 10:50"]))
+        got = predispatch_available_at(label, issued).iloc[0]
+        self.assertEqual(got, pd.Timestamp("2025-01-01 11:15"))
+        got = predispatch_available_at(label, pd.Series(pd.to_datetime(["2025-01-01 10:10"]))).iloc[0]
+        self.assertEqual(got, pd.Timestamp("2025-01-01 10:40"))
+
+    def test_check_availability_rejects_a_late_row(self):
+        table = predispatch_features(self.targets, self.runs, self.realised)
+        table["forecast_origin"] = table.index - HORIZON
+        bad = table.copy()
+        row = bad["pd_available_at"].first_valid_index()
+        bad.loc[row, "pd_available_at"] = row + pd.Timedelta(minutes=1)
+        with self.assertRaises(RuntimeError):
+            check_availability(bad)
+
+
+class FeatureListTests(unittest.TestCase):
+    def test_no_same_interval_realised_columns(self):
+        self.assertFalse(CONTEMPORANEOUS_BANNED.intersection(EXTERNAL_WEATHER + EXTERNAL_PREDISPATCH))
+
+
+@unittest.skipUnless(WEATHER_PATH.exists(), "external weather file not pulled")
+class RealDataTests(unittest.TestCase):
+    def test_built_table_respects_availability(self):
+        from scripts.regime_switch import load
+
+        ready, _ = load()
+        table = build_external(ready)
+        check_availability(table)
+        self.assertTrue((table["wx_available_at"] <= table["forecast_origin"]).all())
+        has_pd = table["pd_available_at"].notna()
+        self.assertTrue((table.loc[has_pd, "pd_available_at"] <= table.loc[has_pd, "forecast_origin"]).all())
+
+
+if __name__ == "__main__":
+    unittest.main()
