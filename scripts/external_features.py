@@ -37,6 +37,7 @@ WEATHER_PATH = ROOT / "data" / "external" / "open_meteo" / "previous_day1_hourly
 PREDISPATCH_DIR = ROOT / "data" / "external" / "aemo_predispatch" / "extract"
 PREDISPATCH_CONSOLIDATED = ROOT / "data" / "external" / "aemo_predispatch" / "predispatch_runs_first9h.parquet"
 FEATURES_PATH = ROOT / "data" / "processed" / "external_features.parquet"
+COVERAGE_PATH = ROOT / "reports" / "forecast" / "spike_predispatch_coverage.csv"
 
 WEATHER_LAG = pd.Timedelta(hours=12)  # value valid at V is usable from V - 12 h
 PD_LABEL_LAG = pd.Timedelta(minutes=40)  # public file ~35 min after the run label
@@ -133,15 +134,20 @@ def weather_features(targets: pd.DatetimeIndex, hourly: pd.DataFrame) -> pd.Data
 # --------------------------------------------------------------------------- pre-dispatch
 
 
-def load_predispatch(directory: Path = PREDISPATCH_DIR) -> pd.DataFrame:
-    """Per-day extracts if present, otherwise the committed consolidated file."""
-    files = sorted(directory.glob("pass*/*.parquet"))
-    if files:
-        runs = pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
-    elif PREDISPATCH_CONSOLIDATED.exists():
-        runs = pd.read_parquet(PREDISPATCH_CONSOLIDATED)
+def load_predispatch(directory: Path = PREDISPATCH_DIR, consolidated: Path = PREDISPATCH_CONSOLIDATED) -> pd.DataFrame:
+    """The committed consolidated file, or the per-day extracts if it has not been built.
+
+    The consolidated file keeps the first 9 hours of every run. Features read at
+    most 4 h (run age) + 2 h (look-ahead) past a run label, so it gives the same
+    features as the full extracts and makes the results reproducible from git.
+    """
+    if consolidated.exists():
+        runs = pd.read_parquet(consolidated)
     else:
-        return pd.DataFrame()
+        files = sorted(directory.glob("pass*/*.parquet"))
+        if not files:
+            return pd.DataFrame()
+        runs = pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
     runs["run_label"] = pd.to_datetime(runs["run_label"], format="%Y%m%d%H%M")
     runs["issued"] = pd.to_datetime(runs["issue_id_time"], format="%Y%m%d%H%M%S", errors="coerce")
     runs["interval"] = pd.to_datetime(runs["dispatch_interval"].str.slice(0, 19))
@@ -233,6 +239,37 @@ def build_external(ready: pd.DataFrame, weather: pd.DataFrame | None = None, run
     return table
 
 
+def predispatch_coverage(table: pd.DataFrame, runs: pd.DataFrame) -> pd.DataFrame:
+    """Per split: origins with a usable pre-dispatch run, run age, and runs present in the archive."""
+    from scripts.forecast_design import split_mask
+
+    split = split_mask(table.index)
+    labels = pd.Series(runs["run_label"].unique())
+    run_split = split_mask(pd.DatetimeIndex(labels))
+    rows = []
+    for name in ("train", "calibration", "test"):
+        block = table.loc[split.eq(name).to_numpy()]
+        if block.empty:
+            continue
+        lo, hi = block.index.min(), block.index.max()
+        expected = pd.date_range(lo.ceil("2h"), hi.floor("2h"), freq="2h")
+        present = pd.DatetimeIndex(labels[run_split.eq(name).to_numpy()])
+        age = block["pd_run_age_min"].dropna()
+        rows.append({
+            "split": name,
+            "first_target": lo,
+            "last_target": hi,
+            "origins": int(len(block)),
+            "origins_with_predispatch": int(block["pd_price_t"].notna().sum()),
+            "share_with_predispatch": float(block["pd_price_t"].notna().mean()),
+            "even_hour_runs_expected": int(len(expected)),
+            "even_hour_runs_present": int(present.isin(expected).sum()),
+            "run_age_min_median": float(age.median()) if len(age) else np.nan,
+            "run_age_min_max": float(age.max()) if len(age) else np.nan,
+        })
+    return pd.DataFrame(rows)
+
+
 def check_availability(table: pd.DataFrame) -> None:
     origin = table["forecast_origin"]
     for col in ("wx_available_at", "pd_available_at"):
@@ -246,9 +283,13 @@ def main() -> None:
     from scripts.regime_switch import load
 
     ready, _ = load()
-    table = build_external(ready)
+    runs = load_predispatch()
+    table = build_external(ready, runs=runs)
     FEATURES_PATH.parent.mkdir(parents=True, exist_ok=True)
     table.to_parquet(FEATURES_PATH)
+    coverage = predispatch_coverage(table, runs)
+    coverage.to_csv(COVERAGE_PATH, index=False)
+    print(coverage.to_string(index=False))
     print(table.describe().T.to_string())
     print("non-null share:")
     print(table.notna().mean().round(3).to_string())

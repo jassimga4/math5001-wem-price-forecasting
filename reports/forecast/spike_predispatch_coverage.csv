@@ -1,0 +1,4 @@
+split,first_target,last_target,origins,origins_with_predispatch,share_with_predispatch,even_hour_runs_expected,even_hour_runs_present,run_age_min_median,run_age_min_max
+train,2023-10-02 08:00:00,2025-09-30 23:55:00,210105,208598,0.9928273958258966,8756,8687,105.0,240.0
+calibration,2025-10-01 00:00:00,2026-03-31 23:55:00,52397,52311,0.9983586846575185,2184,2178,105.0,240.0
+test,2026-04-01 00:00:00,2026-08-18 07:55:00,40127,40127,1.0,1672,1672,105.0,205.0

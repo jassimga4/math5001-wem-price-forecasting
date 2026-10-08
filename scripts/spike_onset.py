@@ -94,8 +94,24 @@ def _xy(frame, features):
     return x
 
 
+def check_attached(rows, features, minimum=0.9):
+    """Fail loudly if an external feature is mostly missing on the fitting rows.
+
+    The first stage-1 run fitted the pre-dispatch set while the pull was still
+    running; its pre-dispatch columns were empty on train, so LightGBM never
+    split on them and the row equalled hurdle_weather.
+    """
+    external = [f for f in features if f.startswith(("pd_", "wx_"))]
+    share = rows[external].notna().mean()
+    low = share[share < minimum]
+    if not low.empty:
+        raise RuntimeError(f"external features mostly missing on fitting rows: {low.round(3).to_dict()}")
+    return share
+
+
 def fit_classifier(train, features, label):
     rows = train.loc[train["eligible"] & (train.index >= FIT_START)]
+    check_attached(rows, features)
     fit, val = rows.loc[rows.index < INNER_VAL_START], rows.loc[rows.index >= INNER_VAL_START]
     probe = LGBMClassifier(**CLF_PARAMS)
     probe.fit(_xy(fit, features), fit[label].astype(int), eval_X=(_xy(val, features),), eval_y=(val[label].astype(int),),
@@ -391,6 +407,10 @@ def run(frame, spike, floor):
             "point_cutoffs": {"up": float(best_point["c_up"]), "down": float(best_point["c_down"])},
             "mixture_cutoffs": {"up": float(best_mix["c_up"]), "down": float(best_mix["c_down"])},
             "detection_cutoff": float(c_det),
+            "external_non_null_share": {
+                split: {k: round(float(v), 4) for k, v in frame_split[[f for f in features if f.startswith(("pd_", "wx_"))]].notna().mean().items()}
+                for split, frame_split in (("train_fit_rows", train.loc[train["eligible"] & (train.index >= FIT_START)]), ("calibration", cal), ("test", test))
+            } if any(f.startswith(("pd_", "wx_")) for f in features) else {},
             "calibration_detection_f1": float(f1_best),
         }
         grid.insert(0, "model", set_name)

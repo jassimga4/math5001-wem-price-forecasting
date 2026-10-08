@@ -14,10 +14,13 @@ if str(ROOT) not in sys.path:
 from scripts.external_features import (
     EXTERNAL_PREDISPATCH,
     EXTERNAL_WEATHER,
+    PD_FIELDS,
+    PREDISPATCH_CONSOLIDATED,
     PREDISPATCH_DIR,
     WEATHER_LAG,
     WEATHER_PATH,
     build_external,
+    load_predispatch,
     check_availability,
     predispatch_available_at,
     predispatch_features,
@@ -127,13 +130,27 @@ class PredispatchAvailabilityTests(unittest.TestCase):
             origin = target - HORIZON
             changed = self.runs.copy()
             late = changed["available_at"] > origin
-            changed.loc[late, ["price", "energy_req", "in_service_cap"]] = 1e6
+            changed.loc[late, list(PD_FIELDS.values())] = 1e6
             again = predispatch_features(pd.DatetimeIndex([target]), changed, self.realised.loc[[target]])
             pd.testing.assert_series_equal(
                 base.loc[target, EXTERNAL_PREDISPATCH].astype(float),
                 again.loc[target, EXTERNAL_PREDISPATCH].astype(float),
                 check_names=False,
             )
+
+    def test_a_late_issue_time_keeps_the_run_out_until_published(self):
+        runs = self.runs.copy()
+        late_label = runs["run_label"].unique()[6]
+        mask = runs["run_label"].eq(late_label)
+        runs.loc[mask, "issued"] = late_label + pd.Timedelta(minutes=50)
+        runs.loc[mask, "available_at"] = predispatch_available_at(runs.loc[mask, "run_label"], runs.loc[mask, "issued"])
+        published = pd.Timestamp(late_label) + pd.Timedelta(minutes=75)
+        table = predispatch_features(self.targets, runs, self.realised)
+        origins = table.index - HORIZON
+        before = (origins >= pd.Timestamp(late_label) + pd.Timedelta(minutes=40)) & (origins < published)
+        self.assertTrue(before.any())
+        self.assertTrue((table.loc[before, "pd_price_t"] // 1000 != 6).all())
+        self.assertTrue((table.loc[origins >= published, "pd_price_t"].iloc[:1] // 1000 == 6).all())
 
     def test_late_issue_time_delays_availability(self):
         label = pd.Series(pd.to_datetime(["2025-01-01 10:00"]))
@@ -168,7 +185,58 @@ class RealDataTests(unittest.TestCase):
         check_availability(table)
         self.assertTrue((table["wx_available_at"] <= table["forecast_origin"]).all())
         has_pd = table["pd_available_at"].notna()
+        from scripts.forecast_design import split_mask
+
+        split = split_mask(table.index)
+        for name in ("train", "calibration", "test"):
+            self.assertGreater(has_pd[split.eq(name).to_numpy()].mean(), 0.9, f"pre-dispatch missing in {name}")
         self.assertTrue((table.loc[has_pd, "pd_available_at"] <= table.loc[has_pd, "forecast_origin"]).all())
+
+
+@unittest.skipUnless(PREDISPATCH_CONSOLIDATED.exists(), "consolidated pre-dispatch file not built")
+class RealPredispatchTests(unittest.TestCase):
+    """The committed pre-dispatch runs: nothing published after an origin reaches its features."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.runs = load_predispatch()
+        rng = np.random.default_rng(3)
+        lo, hi = pd.Timestamp("2023-10-02 08:00"), pd.Timestamp("2026-08-18 07:55")
+        grid = pd.date_range(lo, hi, freq="5min")
+        cls.targets = pd.DatetimeIndex(np.sort(rng.choice(grid, size=300, replace=False)))
+        cls.realised = pd.DataFrame({"mcp_lag_5min": 50.0, "demand_lag_5min": 1500.0}, index=cls.targets)
+        cls.table = predispatch_features(cls.targets, cls.runs, cls.realised)
+
+    def test_every_run_used_was_published_before_the_origin(self):
+        origin = self.table.index - HORIZON
+        used = self.table["pd_available_at"].notna()
+        self.assertGreater(used.mean(), 0.9)
+        self.assertTrue((self.table.loc[used, "pd_available_at"] <= origin[used]).all())
+        # Independent of the available_at column: the public file is posted ~35 min
+        # after the label and ~20 min after the issue time; the rule adds 5 min to each.
+        label = pd.Series(origin - pd.to_timedelta(self.table["pd_run_age_min"].to_numpy(), unit="min"), index=self.table.index)
+        issued = self.runs.groupby("run_label")["issued"].first()
+        published = np.maximum(label + pd.Timedelta(minutes=40), label.map(issued).fillna(label) + pd.Timedelta(minutes=25))
+        self.assertTrue((published[used] <= origin[used]).all())
+
+    def test_runs_published_after_the_origin_cannot_change_a_feature(self):
+        for target in self.targets[::10]:
+            origin = target - HORIZON
+            changed = self.runs.copy()
+            late = changed["available_at"] > origin
+            changed.loc[late, list(PD_FIELDS.values())] = 1e6
+            again = predispatch_features(pd.DatetimeIndex([target]), changed, self.realised.loc[[target]])
+            pd.testing.assert_series_equal(
+                self.table.loc[target, EXTERNAL_PREDISPATCH].astype(float),
+                again.loc[target, EXTERNAL_PREDISPATCH].astype(float),
+                check_names=False,
+            )
+            dropped = predispatch_features(pd.DatetimeIndex([target]), self.runs.loc[~late], self.realised.loc[[target]])
+            pd.testing.assert_series_equal(
+                self.table.loc[target, EXTERNAL_PREDISPATCH].astype(float),
+                dropped.loc[target, EXTERNAL_PREDISPATCH].astype(float),
+                check_names=False,
+            )
 
 
 if __name__ == "__main__":

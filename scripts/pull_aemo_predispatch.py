@@ -4,7 +4,7 @@ Source: https://data.wa.aemo.com.au/public/market-data/wemde/dispatchSolution/
 preDispatchData/previous/DispatchSolutionPreDispatch_YYYYMMDD.zip, one ZIP per
 trading day (08:00 to 07:30 next day, AWST) with 48 half-hourly run files named
 ReferencePre-DispatchSolution_YYYYMMDDHHMM.json. Each run holds 96 future
-5-minute dispatch intervals.
+half-hourly intervals (48 h ahead), the first one labelled at the run label.
 
 The full archive is ~160-250 MB per day and the server serves ~0.25 MB/s per
 connection, so only selected runs are read with HTTP range requests (remotezip)
@@ -142,6 +142,7 @@ def fetch_day(day: pd.Timestamp, which: int, dest: Path, threads: int) -> str:
 
 
 CONSOLIDATED = OUT / "predispatch_runs_first9h.parquet"
+MISSING_RUNS = OUT / "missing_runs.csv"
 KEEP_INTERVALS = 18  # 9 hours of half-hourly intervals per run; features read at most 6 h past the run label
 
 
@@ -154,6 +155,12 @@ def consolidate() -> None:
     runs.to_parquet(CONSOLIDATED, index=False, compression="zstd")
     labels = pd.to_datetime(runs["run_label"], format="%Y%m%d%H%M")
     print(f"{CONSOLIDATED.name}: {runs['run_label'].nunique()} runs, {labels.min()} to {labels.max()}, {len(runs)} rows")
+    # Even-hour runs (pass 1) that are not in the extracts. The pull logged no
+    # download failures, so these are runs absent from the archive ZIPs.
+    expected = pd.date_range(labels.min(), labels.max(), freq="2h")
+    missing = expected.difference(pd.DatetimeIndex(labels.unique()))
+    pd.DataFrame({"run_label": missing}).to_csv(MISSING_RUNS, index=False)
+    print(f"{len(missing)} even-hour runs missing; listed in {MISSING_RUNS.name}")
 
 
 def main() -> None:
