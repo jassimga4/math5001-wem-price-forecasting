@@ -144,12 +144,13 @@ Quantile regression averaging is a comparison, not a replacement for the absolut
 python scripts/pull_open_meteo.py                  # weather (cached responses are reused)
 python scripts/pull_aemo_predispatch.py --pass 1   # slow: about 1 h for the even-hour runs
 python scripts/pull_aemo_predispatch.py --pass 2   # odd-hour runs (stage 1b), about 1 h
+python scripts/pull_aemo_predispatch.py --pass 3   # half-hour runs (stage 1c), about 1.5 h
 python scripts/pull_aemo_predispatch.py --consolidate
 python -m unittest tests/test_external_features.py
 python scripts/spike_onset.py
 ```
 
-The onset model needs `remotezip` for the pre-dispatch pull only. Features are built from the committed `data/external/aemo_predispatch/predispatch_runs_first9h.parquet` (about 18 MB, all hourly runs), so a fresh clone reproduces the results without the pull; the per-day extracts are used only if that file is absent.
+The onset model needs `remotezip` for the pre-dispatch pull only. Features are built from the committed `data/external/aemo_predispatch/predispatch_runs_first9h.parquet` (about 31 MB, all half-hourly runs), so a fresh clone reproduces the results without the pull; the per-day extracts are used only if that file is absent.
 
 If you still see `Missing optional dependency 'pyarrow'`, the notebook or terminal is using a different Python:
 
