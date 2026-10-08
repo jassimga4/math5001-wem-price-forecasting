@@ -9,7 +9,8 @@ half-hourly intervals (48 h ahead), the first one labelled at the run label.
 The full archive is ~160-250 MB per day and the server serves ~0.25 MB/s per
 connection, so only selected runs are read with HTTP range requests (remotezip)
 and only system-level fields are kept. ``--pass 1`` takes runs labelled at even
-hours (:00), ``--pass 2`` the odd hours. The 75 MB run JSON is not stored.
+hours (:00), ``--pass 2`` the odd hours, ``--pass 3`` the half-hour runs (:30).
+The 75 MB run JSON is not stored.
 
 Availability: the public site posts each run file about 35 minutes after its
 label (checked on the live ``current`` folder, 2026-10-08). The rule used
@@ -111,7 +112,10 @@ def parse_run(raw: bytes, label: str) -> pd.DataFrame:
 def run_names(day: pd.Timestamp, which: int) -> list[str]:
     start = day + pd.Timedelta(hours=8)
     labels = pd.date_range(start, start + pd.Timedelta(hours=23, minutes=30), freq="30min")
-    keep = [t for t in labels if t.minute == 0 and (t.hour % 2 == 0) == (which == 1)]
+    if which == 3:
+        keep = [t for t in labels if t.minute == 30]
+    else:
+        keep = [t for t in labels if t.minute == 0 and (t.hour % 2 == 0) == (which == 1)]
     return [f"ReferencePre-DispatchSolution_{t:%Y%m%d%H%M}.json" for t in keep]
 
 
@@ -141,7 +145,7 @@ def fetch_day(day: pd.Timestamp, which: int, dest: Path, threads: int) -> str:
     return f"{day:%Y-%m-%d} runs={len(parts)}/{len(names)}"
 
 
-CONSOLIDATED = OUT / "predispatch_runs_first9h.parquet"  # both passes when pulled
+CONSOLIDATED = OUT / "predispatch_runs_first9h.parquet"  # every pass that has been pulled
 MISSING_RUNS = OUT / "missing_runs.csv"
 KEEP_INTERVALS = 18  # 9 hours of half-hourly intervals per run; features read at most 6 h past the run label
 
@@ -155,23 +159,24 @@ def consolidate() -> None:
     runs.to_parquet(CONSOLIDATED, index=False, compression="zstd")
     labels = pd.to_datetime(runs["run_label"], format="%Y%m%d%H%M")
     print(f"{CONSOLIDATED.name}: {runs['run_label'].nunique()} runs, {labels.min()} to {labels.max()}, {len(runs)} rows")
-    # On-the-hour runs of each pulled pass that are not in the extracts. Download
-    # failures are logged as FAILED on stderr; runs absent from a ZIP are not.
+    # Runs of each pulled pass that are not in the extracts. Download failures
+    # are logged as FAILED on stderr; runs absent from a ZIP are not.
     present = pd.DatetimeIndex(labels.unique())
     passes = sorted(int(f.parent.name[-1]) for f in files)
     start = labels.min().floor("D") + pd.Timedelta(hours=8)
-    expected = pd.date_range(start, labels.max().ceil("D") + pd.Timedelta(hours=7), freq="1h")
+    expected = pd.date_range(start, labels.max().ceil("D") + pd.Timedelta(hours=7, minutes=30), freq="30min")
     expected = expected[(expected >= labels.min()) & (expected <= labels.max())]
-    keep = [(t.hour % 2 == 0 and 1 in passes) or (t.hour % 2 == 1 and 2 in passes) for t in expected]
+    keep = [(t.minute == 30 and 3 in passes) or (t.minute == 0 and t.hour % 2 == 0 and 1 in passes)
+            or (t.minute == 0 and t.hour % 2 == 1 and 2 in passes) for t in expected]
     missing = expected[keep].difference(present)
-    pd.DataFrame({"run_label": missing, "run_type": ["even_hour" if t.hour % 2 == 0 else "odd_hour" for t in missing]}).to_csv(
-        MISSING_RUNS, index=False)
-    print(f"{len(missing)} on-the-hour runs missing; listed in {MISSING_RUNS.name}")
+    kinds = ["half_hour" if t.minute == 30 else ("even_hour" if t.hour % 2 == 0 else "odd_hour") for t in missing]
+    pd.DataFrame({"run_label": missing, "run_type": kinds}).to_csv(MISSING_RUNS, index=False)
+    print(f"{len(missing)} runs missing; listed in {MISSING_RUNS.name}")
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pass", dest="which", type=int, default=1, choices=(1, 2))
+    ap.add_argument("--pass", dest="which", type=int, default=1, choices=(1, 2, 3))
     ap.add_argument("--start", default="2023-09-30")
     ap.add_argument("--end", default="2026-08-17")
     ap.add_argument("--processes", type=int, default=8)
