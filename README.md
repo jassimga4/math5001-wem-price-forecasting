@@ -148,7 +148,7 @@ python -m unittest tests/test_external_features.py
 python scripts/spike_onset.py
 ```
 
-The onset model needs `remotezip` for the pre-dispatch pull only. Without the per-day extracts it reads the committed consolidated file.
+The onset model needs `remotezip` for the pre-dispatch pull only. Features are built from the committed `data/external/aemo_predispatch/predispatch_runs_first9h.parquet` (about 11 MB), so a fresh clone reproduces the results without the pull; the per-day extracts are used only if that file is absent.
 
 If you still see `Missing optional dependency 'pyarrow'`, the notebook or terminal is using a different Python:
 
