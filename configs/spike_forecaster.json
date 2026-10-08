@@ -134,6 +134,18 @@
     ]
   },
   "point": "regime_switch",
-  "cutoffs": {},
-  "selection": {}
+  "cutoffs": {
+    "mixture_up": 0.0025,
+    "mixture_down": 0.2,
+    "detection": 0.24,
+    "calibration_detection_f1": 0.4275862068965517
+  },
+  "selection": {
+    "rule": "Classifier capacity on inner validation windows inside train; model choice, point mode and cutoffs on calibration only (rows after the first 2016). Test was not used for any choice.",
+    "classifier": "HistGradientBoosting had the lowest calibration tail CRPS (55.47) and first-interval CRPS (73.36) of all candidates (LightGBM 55.91/75.09, LightGBM uncapped 55.91/75.08, XGBoost 55.67/74.16, HGB wide grid 56.01/75.49, logistic 58.41/84.92); all were within 1% of the regime switch's overall CRPS.",
+    "up_classifier": "Stage B HGB up classifier: learning rate 0.05, 31 leaves, 100 iterations, chosen by log loss on 2025-07-01 to 2025-09-30 (416 upward crossings). The wider grid preferred 15 leaves on that window but did worse on calibration.",
+    "down_classifier": "The default inner window has no downward crossings, so its log loss falls without limit as capacity grows (stage B picked 800, the top of the grid). Calibration has only 2 downward onsets, so it cannot choose either. The down classifier uses the wide-grid choice on 2024-10-01 to 2024-12-31 (213 crossings, probe fitted on earlier train rows): learning rate 0.05, 15 leaves, 100 iterations.",
+    "point": "Regime switch, no hurdle override. On calibration the HGB override changed tail MAE by -0.07 (65.00 to 64.93) and first-interval MAE by -0.30 (105.76 to 105.46) while raising overall MAE by 0.036 (5.422 to 5.458, +0.7%). The spike probability is rarely above 0.5, so an MAE-optimal point stays near the base distribution; spike information is carried by the distribution and the alert.",
+    "price_path_features": "Kept: on calibration they improved CRPS, tail and first-interval CRPS, recall and AP (stage A)."
+  }
 }

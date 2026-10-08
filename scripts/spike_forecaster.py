@@ -294,9 +294,9 @@ class SpikeForecaster:
             rows = rows.iloc[WINDOW:]
         return rows
 
-    def metrics(self, frame: pd.DataFrame, fc: pd.DataFrame | None = None) -> dict:
+    def metrics(self, frame: pd.DataFrame, fc: pd.DataFrame | None = None, crps: np.ndarray | None = None) -> dict:
         fc = self.forecast(frame) if fc is None else fc
-        crps = self.crps(frame)
+        crps = self.crps(frame) if crps is None else crps
         called = fc["alert"].to_numpy()
         row = so.summary("spike_forecaster", frame, fc["point"].to_numpy(float), crps, called)
         elig = frame["eligible"].to_numpy()
@@ -354,10 +354,10 @@ def cmd_evaluate(args):
     for split in ("calibration", "test"):
         block = model.evaluation_block(frame, split)
         fc = model.forecast(block)
-        row = model.metrics(block, fc)
+        crps = model.crps(block)
+        row = model.metrics(block, fc, crps)
         row["split"] = split
         results.append(row)
-        crps = model.crps(block)
         per_split[split] = (block, fc, crps)
         if split == "test":
             fc.assign(y=block["y"], crps=crps).to_parquet(args.out)
