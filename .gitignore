@@ -19,3 +19,4 @@ raw/
 data/external/aemo_predispatch/extract/
 data/processed/external_features.parquet
 data/external/open_meteo/responses/
+data/processed/cps_base_rows.parquet
