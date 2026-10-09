@@ -13,3 +13,10 @@ raw/
 # Jupyter / Docker
 .streamlit/
 *.egg-info/
+
+# Spike stage 1: per-day pre-dispatch extracts are rebuilt by scripts/pull_aemo_predispatch.py;
+# the consolidated file in data/external/aemo_predispatch/ is committed instead.
+data/external/aemo_predispatch/extract/
+data/processed/external_features.parquet
+data/external/open_meteo/responses/
+data/processed/cps_base_rows.parquet
