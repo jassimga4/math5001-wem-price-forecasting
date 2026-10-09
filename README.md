@@ -175,3 +175,9 @@ If you still see `Missing optional dependency 'pyarrow'`, the notebook or termin
 ```bash
 python -m pip install pyarrow
 ```
+
+## Conformal predictive systems and final results
+
+- `python scripts/spike_cps.py` fits the CPS variants on the calibration window: split, Mondrian by spike risk (fixed and sliding) and PIT recalibration of the spike forecaster. It also fits isotonic recalibration of P(spike up). It then scores everything on calibration (cross-fitted) and on test, and writes `reports/forecast/final_cps_*.csv`.
+- `python scripts/final_report.py` builds `reports/forecast/final_master_table.{csv,md}` and the figures in `reports/figures/final/`.
+- Report-ready summary: `docs/final_results_summary.md`.
