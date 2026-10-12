@@ -31,7 +31,12 @@ LABELS = {
     "lightgbm_conformal": "LightGBM + absolute sliding conformal (frozen)",
     "lightgbm_normalized": "LightGBM + normalised sliding conformal",
     "lightgbm_fixed_split": "LightGBM + fixed split conformal",
-    "qra": "QRA (calibration-fitted)",
+    "qra": "QRA, PR 1: all five members, all calibration (calibration-fitted)",
+    "qra_variant_selected": "QRA variant, PR 2: LightGBM + 5-min persistence, 28-day window (selected on calibration)",
+    "qra_variant_sensitivity": "QRA variant, PR 2: LightGBM + ridge + 5-min persistence, 28-day window (lowest-CRPS calibration alternative)",
+    "qrm_variant": "QRM variant, PR 2: LightGBM + ridge + 5-min persistence, 28-day window (not selected)",
+    "qave_variant": "Q-Ave variant, PR 2: LightGBM quantiles + LightGBM + ridge + 5-min persistence, 28-day window (not selected)",
+    "lightgbm_quantile": "LightGBM quantile regression, PR 2: train only (not selected)",
     "regime_switch": "Regime switch + sliding residual window",
     "hurdle_panel": "Hurdle, panel only (LightGBM)",
     "hurdle_weather": "Hurdle + weather",
@@ -102,6 +107,17 @@ def master_table() -> pd.DataFrame:
                  "tail_width_90": q.loc["tail", "mean_width"],
                  "source": "qra_regime.csv (PR 2; same test rows; CRPS is the quantile integral over levels 0.01 to 0.99, "
                            "not the empirical CRPS; LightGBM conformal scores 4.004 overall and 15.98 tail on that measure)"})
+    var = pd.read_csv(OUT / "qra_variants_test.csv").set_index("variant")
+    meta = json.loads((OUT / "qra_variants_meta.json").read_text())
+    picks = {"qra_variant_selected": meta["selected_variant"], "qra_variant_sensitivity": meta["sensitivity_lowest_crps_in_band"],
+             "qrm_variant": "qrm:lgbm_ridge_p5@28d", "qave_variant": "qave:lgbmq_lgbm_ridge_p5@28d",
+             "lightgbm_quantile": "lightgbm_quantile:native@none"}
+    for name, v in picks.items():
+        r = var.loc[v]
+        rows.append({"model": name, "split": "test", "crps": r["crps_quantile_integral"], "coverage_90": r["coverage_90"],
+                     "width_90": r["mean_width_90"],
+                     "source": f"qra_variants_test.csv row {v} (PR 2; same 40,127 test rows; CRPS is the quantile integral "
+                               "over 23 levels 0.01 to 0.99, not the empirical CRPS; no regime split stored)"})
     table = pd.DataFrame(rows)
     order = list(LABELS)
     table["order"] = table["model"].map({m: i for i, m in enumerate(order)})
@@ -126,8 +142,13 @@ def markdown(table: pd.DataFrame) -> str:
         out.append(head)
         out.append("| --- |" + " ---: |" * len(cols))
         for _, r in t.iterrows():
-            out.append("| " + r["label"] + " | " + " | ".join(fmt(r.get(c), d) for c, d in cols) + " |")
+            mark = " †" if "quantile integral" in str(r["source"]) else ""
+            out.append("| " + r["label"] + mark + " | " + " | ".join(fmt(r.get(c), d) for c, d in cols) + " |")
         out.append("")
+        if split == "test":
+            out.append("† The CRPS is the quantile-score integral over the stored levels (0.01 to 0.99), not the exact or "
+                       "empirical CRPS used in the other rows. The frozen LightGBM conformal scores 4.004 on that measure, "
+                       "against 4.033 exact.\n")
     return "\n".join(out)
 
 

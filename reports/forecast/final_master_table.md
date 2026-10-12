@@ -6,7 +6,12 @@
 | LightGBM + absolute sliding conformal (frozen) | 4.033 | 16.11 | 41.29 | 0.898 | 20.9 | 0.679 | 24.6 | 0.315 | 25.1 | 52.1 | 4.753 |
 | LightGBM + normalised sliding conformal | – | – | – | 0.898 | 22.1 | – | – | – | – | – | – |
 | LightGBM + fixed split conformal | – | – | – | 0.923 | 23.9 | – | – | – | – | – | – |
-| QRA (calibration-fitted) | 3.921 | 15.34 | – | 0.930 | 26.1 | 0.680 | 35.3 | – | – | – | – |
+| QRA, PR 1: all five members, all calibration (calibration-fitted) † | 3.921 | 15.34 | – | 0.930 | 26.1 | 0.680 | 35.3 | – | – | – | – |
+| QRA variant, PR 2: LightGBM + 5-min persistence, 28-day window (selected on calibration) † | 3.916 | – | – | 0.868 | 16.7 | – | – | – | – | – | – |
+| QRA variant, PR 2: LightGBM + ridge + 5-min persistence, 28-day window (lowest-CRPS calibration alternative) † | 3.856 | – | – | 0.857 | 16.4 | – | – | – | – | – | – |
+| QRM variant, PR 2: LightGBM + ridge + 5-min persistence, 28-day window (not selected) † | 4.126 | – | – | 0.860 | 16.4 | – | – | – | – | – | – |
+| Q-Ave variant, PR 2: LightGBM quantiles + LightGBM + ridge + 5-min persistence, 28-day window (not selected) † | 3.868 | – | – | 0.913 | 22.0 | – | – | – | – | – | – |
+| LightGBM quantile regression, PR 2: train only (not selected) † | 3.744 | – | – | 0.927 | 34.3 | – | – | – | – | – | – |
 | Regime switch + sliding residual window | 3.975 | 14.70 | 41.57 | 0.898 | 20.2 | 0.719 | 23.2 | 0.293 | 24.1 | 52.0 | 4.650 |
 | Hurdle, panel only (LightGBM) | 3.917 | 13.29 | 30.37 | – | – | – | – | – | – | – | 4.640 |
 | Hurdle + weather | 3.921 | 13.32 | 30.55 | – | – | – | – | – | – | – | 4.709 |
@@ -25,6 +30,8 @@
 | CPS: Mondrian by spike risk (sliding windows) | 3.885 | 14.29 | 37.78 | 0.900 | 25.4 | 0.891 | 86.8 | 0.623 | 54.9 | 46.4 | 4.650 |
 | CPS: PIT-recalibrated spike forecaster | 3.909 | 13.16 | 29.15 | 0.905 | 23.5 | 0.779 | 36.2 | 0.811 | 133.4 | 49.3 | – |
 | CPS: PIT-recalibrated, Mondrian by spike risk | 4.452 | 21.04 | 29.96 | 0.931 | 55.6 | 0.964 | 358.8 | 0.841 | 153.3 | 65.7 | – |
+
+† The CRPS is the quantile-score integral over the stored levels (0.01 to 0.99), not the exact or empirical CRPS used in the other rows. The frozen LightGBM conformal scores 4.004 on that measure, against 4.033 exact.
 
 #### Calibration
 
