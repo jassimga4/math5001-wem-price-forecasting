@@ -155,6 +155,21 @@ python -m unittest tests/test_forecast_design.py tests/test_point_models.py test
 python scripts/qra_variants.py
 ```
 
+Test results:
+
+- **Selected variant:** `qra:lgbm_p5@28d` covers 0.868 with width 16.7 at 90%, and scores 3.916 quantile-integral CRPS (`qra_variants_test.csv`). It under-covers on test, although it covered 0.915 in March.
+- **PR 1 QRA** (all five members, all calibration): 0.930, 26.1 and 3.921.
+- **Native LightGBM quantile:** 0.927, 34.3 and 3.744.
+
+`python scripts/qra_figures.py` draws these from the stored csvs into `reports/figures/qra/`, as PNG and PDF, without refitting:
+
+- coverage against width;
+- CRPS by variant;
+- the recency-window effect;
+- pinball loss by quantile level.
+
+The QRA rows are also in `reports/forecast/final_master_table.md`, marked † because their CRPS is the quantile integral, and in `docs/final_results_summary.md`.
+
 ## Regime switch and spike next steps
 
 `python scripts/regime_switch.py` does not refit LightGBM. On late calibration it chooses a gate: persistence if the absolute 30-minute move is at least $32.48, otherwise the saved LightGBM forecast. The frozen 7-day absolute conformal fence is applied to that switched centre. Test scores are in `reports/forecast/regime_cps_comparison.csv`. The switch improves test MAE from 4.75 to 4.65 and empirical CRPS from 4.03 to 3.98, and it closes most of the tail gap to persistence. It is not an onset model.

@@ -32,6 +32,15 @@ This file is for the paper write-up. Every number comes from a committed CSV in 
 
 **QRA (PR 2).** Linear quantile regression averaging of the persistence (5 min, 30 min, 1 day), ridge and LightGBM forecasts, fitted on calibration (`scripts/qra.py`). The numbers come from `qra_regime.csv`. Its CRPS is a quantile-score integral over levels 0.01 to 0.99, not an exact CRPS. On that measure the LightGBM conformal scores 4.004 overall and 15.98 on the tail (exact: 4.033 and 16.11). First-interval scores were not stored.
 
+**QRA variants with recent windows (PR 2, `scripts/qra_variants.py`).** The same five ex-ante point forecasts are combined in several ways:
+
+- **QRA** (Nowotarski & Weron 2015): linear quantile regression of MCP on the member forecasts.
+- **QRM** (Marcjasz, Uniejewski & Weron 2020): quantile regression on the mean of the member forecasts.
+- **Q-Ave**: quantile averaging. Each member becomes a quantile forecast by univariate quantile regression, or by native LightGBM quantiles; the sorted quantiles are then averaged level by level.
+- **LightGBM quantile**: a native LightGBM quantile forecast fitted on train only with the frozen point-model hyperparameters.
+
+Each calibration-fitted variant uses a member subset (all five; LightGBM; LightGBM + 5-min persistence; LightGBM + ridge + 5-min persistence) and the most recent 28, 56 or 91 days, or all pre-test data. Selection used only an inner split of calibration: fit to 2026-02-28 and score March 2026. Among variants with March 90% coverage in [0.88, 0.92], the narrowest mean width was chosen. The choice was `qra:lgbm_p5@28d`, which covered 0.915 with width 15.23 in March. It was refit on the 28 days ending 2026-03-31 and scored once on test. The other 46 test rows are reported for comparison only. CRPS is the quantile-score integral over 23 levels from 0.01 to 0.99 (`qra_variants_test.csv`, `qra_variants_meta.json`).
+
 **Regime switch.** The point is persistence when the absolute 30-minute move is at least 32.48 $/MWh, and LightGBM otherwise; the rule was chosen on calibration (`scripts/regime_switch.py`). Its distribution is the point plus the last 2,016 residuals of the switch.
 
 **Hurdle models (spike stage 1 to B).** These apply at origins whose last price is inside the training band:
@@ -83,7 +92,12 @@ Missing values (–) mean the metric was not stored for that method. Hurdle rows
 | LightGBM + absolute sliding conformal (frozen) | 4.033 | 16.11 | 41.29 | 0.898 | 20.9 | 0.679 | 24.6 | 0.315 | 25.1 | 52.1 | 4.753 |
 | LightGBM + normalised sliding conformal | – | – | – | 0.898 | 22.1 | – | – | – | – | – | – |
 | LightGBM + fixed split conformal | – | – | – | 0.923 | 23.9 | – | – | – | – | – | – |
-| QRA (calibration-fitted) | 3.921 | 15.34 | – | 0.930 | 26.1 | 0.680 | 35.3 | – | – | – | – |
+| QRA, PR 1: all five members, all calibration (calibration-fitted) † | 3.921 | 15.34 | – | 0.930 | 26.1 | 0.680 | 35.3 | – | – | – | – |
+| QRA variant, PR 2: LightGBM + 5-min persistence, 28-day window (selected on calibration) † | 3.916 | – | – | 0.868 | 16.7 | – | – | – | – | – | – |
+| QRA variant, PR 2: LightGBM + ridge + 5-min persistence, 28-day window (lowest-CRPS calibration alternative) † | 3.856 | – | – | 0.857 | 16.4 | – | – | – | – | – | – |
+| QRM variant, PR 2: LightGBM + ridge + 5-min persistence, 28-day window (not selected) † | 4.126 | – | – | 0.860 | 16.4 | – | – | – | – | – | – |
+| Q-Ave variant, PR 2: LightGBM quantiles + LightGBM + ridge + 5-min persistence, 28-day window (not selected) † | 3.868 | – | – | 0.913 | 22.0 | – | – | – | – | – | – |
+| LightGBM quantile regression, PR 2: train only (not selected) † | 3.744 | – | – | 0.927 | 34.3 | – | – | – | – | – | – |
 | Regime switch + sliding residual window | 3.975 | 14.70 | 41.57 | 0.898 | 20.2 | 0.719 | 23.2 | 0.293 | 24.1 | 52.0 | 4.650 |
 | Hurdle, panel only (LightGBM) | 3.917 | 13.29 | 30.37 | – | – | – | – | – | – | – | 4.640 |
 | Hurdle + weather | 3.921 | 13.32 | 30.55 | – | – | – | – | – | – | – | 4.709 |
@@ -102,6 +116,8 @@ Missing values (–) mean the metric was not stored for that method. Hurdle rows
 | CPS: Mondrian by spike risk (sliding windows) | 3.885 | 14.29 | 37.78 | 0.900 | 25.4 | 0.891 | 86.8 | 0.623 | 54.9 | 46.4 | 4.650 |
 | CPS: PIT-recalibrated spike forecaster | 3.909 | 13.16 | 29.15 | 0.905 | 23.5 | 0.779 | 36.2 | 0.811 | 133.4 | 49.3 | – |
 | CPS: PIT-recalibrated, Mondrian by spike risk | 4.452 | 21.04 | 29.96 | 0.931 | 55.6 | 0.964 | 358.8 | 0.841 | 153.3 | 65.7 | – |
+
+† The CRPS is the quantile-score integral over the stored levels (0.01 to 0.99), not the exact or empirical CRPS used in the other rows. The frozen LightGBM conformal scores 4.004 on that measure, against 4.033 exact.
 
 #### Calibration
 
@@ -184,6 +200,13 @@ Isotonic recalibration brings the low and middle probability bins closer to the 
 - `reliability_isotonic.png`: reliability of P(spike up) before and after isotonic recalibration, on cross-fitted calibration and on test, with Brier score and log loss in the legend.
 - `spike_episode.png`: the largest upward test onset (2026-04-28 10:40, 976 $/MWh), with the 90% bands of the spike forecaster, the sliding Mondrian CPS, the PIT CPS and the LightGBM conformal.
 
+QRA figures (`reports/figures/qra/`, PNG and PDF; `python scripts/qra_figures.py`, built from stored csvs with no refitting):
+
+- `qra_coverage_vs_width.png`: test 90% coverage against mean width for all 45 QRA/QRM/Q-Ave variants (marker = window) and native LightGBM quantile regression, with the frozen LightGBM sliding conformal, the spike forecaster and the sliding Mondrian CPS for reference.
+- `qra_crps_by_variant.png`: test quantile-integral CRPS for every variant and the two frozen sliding conformal references, sorted.
+- `qra_recency_window.png`: CRPS and 90% coverage against the calibration window (28, 56, 91 days, all), on the inner calibration month and on test, one line per combiner and member subset.
+- `qra_pinball_by_quantile.png`: test pinball loss by quantile level for the PR 1 QRA, LightGBM and persistence sliding conformal (levels 0.025 to 0.975 from `qra_test.csv` and `conformal_test.csv`) and the spike forecaster (its stored quantiles 0.01 to 0.99). Values are in `reports/forecast/qra_pinball_by_level.csv`.
+
 Earlier figures: `reports/figures/spike/` (forecaster reliability, three episodes, first-interval CRPS).
 
 ## Findings
@@ -205,6 +228,14 @@ Earlier figures: `reports/figures/spike/` (forecaster reliability, three episode
 9. **Classifiers.** HGB beats LightGBM on tail CRPS (−0.07 [−0.11, −0.04]) and first-interval CRPS (−0.58 [−0.90, −0.30]). XGBoost is level with LightGBM, and logistic regression is clearly worse (+4.88 first-interval CRPS). The default inner validation window had no downward crossings, so down-classifier capacity was chosen on 2024 Q4 instead.
 10. **Probabilities.** The forecaster's raw P(spike up) overstates low risks on test. Isotonic recalibration on calibration improves log loss slightly, leaves the Brier score unchanged and lowers AP. It is not a clear improvement, because the spike base rate in test was 4.4 times the calibration rate.
 
+11. **QRA variants (quantile-integral CRPS, test).**
+    - **Ranking:** the native LightGBM quantile forecast scores lowest (3.744) but is wide (34.3 $/MWh at 90%, coverage 0.927). Among the calibration-fitted combinations, the lowest are `qra:all5@91d` (3.831) and `qra:lgbm_ridge_p5@91d` (3.846). The selected `qra:lgbm_p5@28d` scores 3.916, against 3.921 for the PR 1 QRA and 4.004 for the frozen LightGBM sliding conformal on the same measure.
+    - **Coverage:** the selection rule picked the narrowest variant near 90% on March 2026. On test it under-covers (0.868, width 16.7), while the QRA all-calibration windows over-cover (0.929–0.936).
+    - **Recency:** the 56-day windows cover worst on test (0.77–0.85). Only Q-Ave with native LightGBM quantiles reaches 0.90 with short windows (0.913 at 28 days, 0.899 at 56 days). Recency helps CRPS slightly but makes coverage unstable under the calibration-to-test shift.
+    - **QRM and Q-Ave** with all five members are much worse (CRPS 7.2–7.8), because 30-minute and 1-day persistence enter with equal weight.
+    - **Pinball by level:** the PR 1 QRA beats LightGBM sliding conformal at every stored level. The spike forecaster is lower than both at 0.75–0.95, the upper levels, which matter for spikes. It is higher at 0.05–0.25.
+    - **Comparison caveat:** the QRA rows have no regime split or onset scores, so they cannot be compared with the spike models on tail or first-interval CRPS, and their CRPS uses a different estimator from the exact CRPS of the other rows.
+
 ## Limitations
 
 - **No downward spikes in test and 2 in calibration.** Every down-side component (classifier, categories, recalibration) is effectively untested. Downward crossings almost stopped after 2024.
@@ -213,3 +244,85 @@ Earlier figures: `reports/figures/spike/` (forecaster reliability, three episode
 - **Coverage of the hurdle rows.** Hurdle rows other than the frozen forecaster have no stored intervals, so only their CRPS and MAE are compared.
 - **QRA's CRPS is a truncated quantile integral, not an exact CRPS.**
 - **The calibration scores of the spike forecaster are not out of sample**, because its cutoffs were chosen there. The calibration scores of the CPS variants are cross-fitted halves.
+
+## Next steps for spike prediction forecasting
+
+Each item says why it is worth doing (from our results and `/workspace/spike_forecasting_literature.md`), how to do it within the frozen design, and how to evaluate it. Some rules apply to every item:
+
+- fit on train;
+- choose cutoffs and windows on calibration;
+- score test once;
+- use each series only from its publication time;
+- report CRPS, tail CRPS, first-interval CRPS, 90% coverage and width, with 1-day block bootstrap ranges against the frozen spike forecaster and against persistence.
+
+### 1. Hazard (ACH-style) features and a regime-switching logit benchmark
+
+- **Why:** Recent price-path features carried the only robust signal we found:
+  - first-interval CRPS −0.70 [−1.14, −0.33] against the panel-only hurdle;
+  - average precision 0.330 → 0.364;
+  - the near-up count over 30 minutes ranked 3rd in importance.
+
+  Hazard and self-exciting models formalise the same spike-clustering effect (Christensen, Hurn & Lindsay 2012; Clements et al. 2015). Eichler et al. (2014) recommend a regime-switching logit out of sample.
+- **How:** Add features computed from prices realised by the origin:
+  - exponentially decayed counts of past band crossings, with half-lives of 30 minutes, 2 hours and 1 day (decays fixed in advance, or chosen on calibration);
+  - time since the last up or down spike;
+  - the duration of the current spell.
+
+  Refit the HGB classifier with the frozen capacity grid. Separately, fit a small benchmark (a logit with an ACH intensity term, or a two-state regime-switching logit) on train as a classifier.
+- **Evaluate:** Average precision and Brier score on calibration and test, and first-interval CRPS once the benchmark is plugged into the same mixture. Bootstrap the differences against the frozen forecaster.
+
+### 2. EVT (generalised Pareto) for spike size, and the down side
+
+- **Why:** The forecaster's size models are LightGBM quantiles, fitted on few crossings. Test has 403 upward onsets and no downward ones; calibration has 2 downward onsets. Downward crossings per quarter since 2025 were 7, 1, 0, 2, 0, 0, 0. The fixed-calibration CPS variants show how unstable empirical tails are across periods (test tail width 246.7 for the fixed Mondrian CPS). Chan & Gray (2006) fit a peaks-over-threshold tail to electricity residuals.
+- **How:** Fit a generalised Pareto distribution to exceedances above the training spike threshold (170.318) and below the floor (−54.19) on train. Let the scale depend on one or two origin features, or fit it unconditionally, and use it in place of the LightGBM size grid in the mixture. Choose the threshold from a mean-excess plot on train.
+- **Evaluate:**
+  - tail CRPS and first-interval CRPS against the frozen forecaster;
+  - test coverage of upper quantiles (95%, 99%) on onsets;
+  - for the down side, report only calibration and the 2 events, and state that test cannot evaluate it.
+
+### 3. Reserve-margin and wind-forecast-error features published before the origin
+
+- **Why:** The reserve margin is the strongest spike driver in Mount, Ning & Cai (2006), and supply-demand indices matter in Lu et al. (2005) and Liu et al. (2022). The EPWA (2025) WEM review names wind forecast error as a leading cause of unforecast high prices. Our pre-dispatch features (even-hour, hourly and half-hourly, with revisions) gave no gain beyond noise: for example, first-interval CRPS −0.09 [−0.49, +0.35] for the hourly runs. Those features are half-hourly forecasts, so a real-time margin is the untested version.
+- **How:** Build, from WEM real-time data published by T−5:
+  - the latest dispatch headroom (available capacity minus dispatched demand);
+  - the SCADA wind output minus the most recent published wind forecast for that interval.
+
+  Record the publication timestamp of each series and add a leakage test like `tests/test_external_features.py`. Add no new MCP lags.
+- **Evaluate:** As for stage 1: bootstrap against the panel + path hurdle on overall, tail and first-interval CRPS and MAE. A null result is reported as one.
+
+### 4. Model combination across training windows (QRA of forecasters)
+
+- **Why:** The QRA variants show strong recency effects. On test, the 28- and 56-day windows under-cover:
+  - the selected `qra:lgbm_p5@28d` covers 0.868 on test against 0.915 in the inner calibration month;
+  - all-calibration windows cover 0.93.
+
+  The calibration-to-test shift also hurt every fixed-calibration CPS variant. Cornell et al. (2023) found that combining quantile models across training-window lengths (Q-QRA) gave the lowest CRPS for 5-minute SA prices.
+- **How:** Fit the spike forecaster's classifier and size models on several training windows (all training data, the last 12 months, the last 6 months). Combine their predictive quantiles with QRA or quantile averaging fitted on calibration only, by the existing `scripts/qra_variants.py` rules, with the spike forecaster and sliding conformal as members.
+- **Evaluate:** Exact CRPS (from each mixture), quantile-integral CRPS for comparison with the QRA rows, 90% coverage and width on test, and first-interval CRPS against the frozen forecaster.
+
+### 5. Probability recalibration under regime shift
+
+- **Why:** Isotonic recalibration fitted on calibration left the test Brier score unchanged (0.008523 → 0.008532), improved log loss slightly (0.0324 → 0.0312) and lowered average precision (0.346 → 0.327). The test spike base rate was 4.4 times the calibration rate. A fixed map cannot follow this shift.
+- **How:** Use a sliding or exponentially weighted recalibration on realised outcomes before the origin. Options: Platt scaling on a 7- or 28-day window, or a logistic intercept shift updated on realised base rates, like the sliding conformal residual window. Choose the window on calibration only.
+- **Evaluate:**
+  - Brier score, log loss and reliability diagrams on test;
+  - the effect on the alert cutoff (precision and recall at the frozen 0.24);
+  - first-interval CRPS when the recalibrated P(up) feeds the mixture.
+
+### 6. More test windows and rolling-origin evaluation
+
+- **Why:** The test window covers 4.5 months (40,127 intervals, 403 onsets, no downward spikes). Weron (2014) and Lago et al. (2021) recommend at least a year of test data, and Sheybanivaziri et al. (2024) flag short windows as a common weakness. Spike frequency differed by a factor of 4 between calibration and test, so one split is fragile.
+- **How:** Re-run the whole frozen pipeline on rolling origins: refit on an expanding training window, calibrate on the next 6 months, and test on the following quarter, for every quarter with enough history. Keep the current test as one fold. Choose nothing on any test fold.
+- **Evaluate:** Report per-fold CRPS, tail CRPS, first-interval CRPS and coverage, and test the pooled differences with Diebold–Mariano-type tests or the existing block bootstrap.
+
+### 7. Live deployment notes
+
+- **Why:** The forecaster is meant to issue P(spike) and quantiles at T−5. In production, timing and drift matter more than small score gains.
+- **How:**
+  - Run `scripts/spike_forecaster.py forecast` on each new dispatch interval.
+  - Rebuild the residual history with `set_history` from the latest 2,016 realised intervals.
+  - Log every forecast with its origin time and input publication times.
+  - Monitor rolling 7-day coverage, the Brier score and the spike base rate, with an alert when coverage of the 90% interval leaves [0.85, 0.95].
+  - Refit the classifier and size models quarterly, and re-select cutoffs on the latest calibration months only.
+  - Treat the down side as unvalidated.
+- **Evaluate:** Shadow-run it against persistence and the regime switch for at least one quarter before relying on alerts, and report the same metrics on that live period.
