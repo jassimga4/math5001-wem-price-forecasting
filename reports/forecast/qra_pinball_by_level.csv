@@ -1,0 +1,33 @@
+model,level,pinball
+QRA (PR 1),0.025,0.76975647122479
+QRA (PR 1),0.05,1.0525485364543006
+QRA (PR 1),0.1,1.4438533523091892
+QRA (PR 1),0.25,2.0732836484407677
+QRA (PR 1),0.75,2.328027959422072
+QRA (PR 1),0.9,1.7625883522015748
+QRA (PR 1),0.95,1.336789593915228
+QRA (PR 1),0.975,0.9803000266865096
+LightGBM + sliding conformal,0.025,0.8503214327507783
+LightGBM + sliding conformal,0.05,1.1520195519980534
+LightGBM + sliding conformal,0.1,1.5553475740656275
+LightGBM + sliding conformal,0.25,2.1161164757102533
+LightGBM + sliding conformal,0.75,2.343996132156542
+LightGBM + sliding conformal,0.9,1.8487189638416244
+LightGBM + sliding conformal,0.95,1.4515045017419623
+LightGBM + sliding conformal,0.975,1.1248859377346494
+Persistence + sliding conformal,0.025,1.060494891220375
+Persistence + sliding conformal,0.05,1.3992301692127496
+Persistence + sliding conformal,0.1,1.825614449124032
+Persistence + sliding conformal,0.25,2.3394268821491764
+Persistence + sliding conformal,0.75,2.325739838512722
+Persistence + sliding conformal,0.9,1.8001931367906894
+Persistence + sliding conformal,0.95,1.386307897425674
+Persistence + sliding conformal,0.975,1.0622067996610765
+Spike forecaster,0.01,0.6548847725569065
+Spike forecaster,0.05,1.2567506161634112
+Spike forecaster,0.1,1.6506815159906059
+Spike forecaster,0.25,2.157045226727804
+Spike forecaster,0.75,2.171383416116937
+Spike forecaster,0.9,1.6207469006812114
+Spike forecaster,0.95,1.2243775943488393
+Spike forecaster,0.99,0.6488817959342529

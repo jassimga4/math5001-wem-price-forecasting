@@ -1,0 +1,34 @@
+{
+  "comparison_row": "spike_forecaster",
+  "max_abs_difference": 1.1102230246251565e-16,
+  "differences": {
+    "calibration": {
+      "mae": 0.0,
+      "crps": 0.0,
+      "tail_mae": 0.0,
+      "tail_crps": 0.0,
+      "onset_mae": 0.0,
+      "onset_crps": 0.0,
+      "fresh_onset_mae": 0.0,
+      "fresh_onset_crps": 0.0,
+      "onset_precision": 5.551115123125783e-17,
+      "onset_recall": 0.0,
+      "onset_average_precision": 0.0,
+      "onset_roc_auc": 0.0
+    },
+    "test": {
+      "mae": 0.0,
+      "crps": 0.0,
+      "tail_mae": 0.0,
+      "tail_crps": 0.0,
+      "onset_mae": 0.0,
+      "onset_crps": 0.0,
+      "fresh_onset_mae": 0.0,
+      "fresh_onset_crps": 0.0,
+      "onset_precision": 5.551115123125783e-17,
+      "onset_recall": 0.0,
+      "onset_average_precision": 0.0,
+      "onset_roc_auc": 1.1102230246251565e-16
+    }
+  }
+}
