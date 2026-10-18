@@ -1,0 +1,277 @@
+model,subset,level,pinball
+"QRA (5 forecasts, cal-fit)",all,0.01,0.4812385629031366
+"QRA (5 forecasts, cal-fit)",all,0.025,0.76975647122479
+"QRA (5 forecasts, cal-fit)",all,0.05,1.0525485364543015
+"QRA (5 forecasts, cal-fit)",all,0.1,1.4438533523091897
+"QRA (5 forecasts, cal-fit)",all,0.15,1.7256289846830186
+"QRA (5 forecasts, cal-fit)",all,0.2,1.9295960810276958
+"QRA (5 forecasts, cal-fit)",all,0.25,2.073283648440768
+"QRA (5 forecasts, cal-fit)",all,0.3,2.1756998410827615
+"QRA (5 forecasts, cal-fit)",all,0.35,2.2433503527501153
+"QRA (5 forecasts, cal-fit)",all,0.4,2.29453476379561
+"QRA (5 forecasts, cal-fit)",all,0.45,2.3377063108052623
+"QRA (5 forecasts, cal-fit)",all,0.5,2.3718418308490334
+"QRA (5 forecasts, cal-fit)",all,0.55,2.39891436391077
+"QRA (5 forecasts, cal-fit)",all,0.6,2.4156402403349424
+"QRA (5 forecasts, cal-fit)",all,0.65,2.417022805060231
+"QRA (5 forecasts, cal-fit)",all,0.7,2.3906062609671905
+"QRA (5 forecasts, cal-fit)",all,0.75,2.3280279594220716
+"QRA (5 forecasts, cal-fit)",all,0.8,2.2117472120002892
+"QRA (5 forecasts, cal-fit)",all,0.85,2.0316646696445444
+"QRA (5 forecasts, cal-fit)",all,0.9,1.7625883522015748
+"QRA (5 forecasts, cal-fit)",all,0.95,1.3367895939152281
+"QRA (5 forecasts, cal-fit)",all,0.975,0.9803000266865095
+"QRA (5 forecasts, cal-fit)",all,0.99,0.6146620189622873
+"QRA (5 forecasts, cal-fit)",body,0.01,0.4453813288706858
+"QRA (5 forecasts, cal-fit)",body,0.025,0.6890813513920443
+"QRA (5 forecasts, cal-fit)",body,0.05,0.9129701202326908
+"QRA (5 forecasts, cal-fit)",body,0.1,1.2276314218269961
+"QRA (5 forecasts, cal-fit)",body,0.15,1.4483275190185965
+"QRA (5 forecasts, cal-fit)",body,0.2,1.5971588602849167
+"QRA (5 forecasts, cal-fit)",body,0.25,1.6930315834305902
+"QRA (5 forecasts, cal-fit)",body,0.3,1.75128214117723
+"QRA (5 forecasts, cal-fit)",body,0.35,1.7787255844770669
+"QRA (5 forecasts, cal-fit)",body,0.4,1.7913122407671194
+"QRA (5 forecasts, cal-fit)",body,0.45,1.7975741658589712
+"QRA (5 forecasts, cal-fit)",body,0.5,1.7964034951948586
+"QRA (5 forecasts, cal-fit)",body,0.55,1.7880894718824585
+"QRA (5 forecasts, cal-fit)",body,0.6,1.772355722694699
+"QRA (5 forecasts, cal-fit)",body,0.65,1.7439567365150823
+"QRA (5 forecasts, cal-fit)",body,0.7,1.6929137684699935
+"QRA (5 forecasts, cal-fit)",body,0.75,1.6116626211098206
+"QRA (5 forecasts, cal-fit)",body,0.8,1.4891965590012557
+"QRA (5 forecasts, cal-fit)",body,0.85,1.3168421877961125
+"QRA (5 forecasts, cal-fit)",body,0.9,1.0861593448055389
+"QRA (5 forecasts, cal-fit)",body,0.95,0.7783651220655217
+"QRA (5 forecasts, cal-fit)",body,0.975,0.5865942645620523
+"QRA (5 forecasts, cal-fit)",body,0.99,0.4264999724043737
+"QRA (5 forecasts, cal-fit)",spike (tail),0.01,0.8941783438488995
+"QRA (5 forecasts, cal-fit)",spike (tail),0.025,1.6988288665288451
+"QRA (5 forecasts, cal-fit)",spike (tail),0.05,2.659964227445594
+"QRA (5 forecasts, cal-fit)",spike (tail),0.1,3.9339125835422113
+"QRA (5 forecasts, cal-fit)",spike (tail),0.15,4.919093555424167
+"QRA (5 forecasts, cal-fit)",spike (tail),0.2,5.758016114416388
+"QRA (5 forecasts, cal-fit)",spike (tail),0.25,6.4523499279918495
+"QRA (5 forecasts, cal-fit)",spike (tail),0.3,7.06338727034419
+"QRA (5 forecasts, cal-fit)",spike (tail),0.35,7.594071210332524
+"QRA (5 forecasts, cal-fit)",spike (tail),0.4,8.08975584075597
+"QRA (5 forecasts, cal-fit)",spike (tail),0.45,8.557986698691106
+"QRA (5 forecasts, cal-fit)",spike (tail),0.5,8.998716063752275
+"QRA (5 forecasts, cal-fit)",spike (tail),0.55,9.433307950491335
+"QRA (5 forecasts, cal-fit)",spike (tail),0.6,9.823846003215607
+"QRA (5 forecasts, cal-fit)",spike (tail),0.65,10.168199447841097
+"QRA (5 forecasts, cal-fit)",spike (tail),0.7,10.425386209653722
+"QRA (5 forecasts, cal-fit)",spike (tail),0.75,10.57784850085271
+"QRA (5 forecasts, cal-fit)",spike (tail),0.8,10.532799195586469
+"QRA (5 forecasts, cal-fit)",spike (tail),0.85,10.263717337244659
+"QRA (5 forecasts, cal-fit)",spike (tail),0.9,9.552493337251182
+"QRA (5 forecasts, cal-fit)",spike (tail),0.95,7.767728435201256
+"QRA (5 forecasts, cal-fit)",spike (tail),0.975,5.5143020364797355
+"QRA (5 forecasts, cal-fit)",spike (tail),0.99,2.781577465301879
+"QRA (5 forecasts, cal-fit)",spike onset,0.01,0.861789459240526
+"QRA (5 forecasts, cal-fit)",spike onset,0.025,1.626147737266122
+"QRA (5 forecasts, cal-fit)",spike onset,0.05,2.7469550588471225
+"QRA (5 forecasts, cal-fit)",spike onset,0.1,5.021339542192099
+"QRA (5 forecasts, cal-fit)",spike onset,0.15,7.250967129722631
+"QRA (5 forecasts, cal-fit)",spike onset,0.2,9.42813754019113
+"QRA (5 forecasts, cal-fit)",spike onset,0.25,11.529896715492658
+"QRA (5 forecasts, cal-fit)",spike onset,0.3,13.598457944450823
+"QRA (5 forecasts, cal-fit)",spike onset,0.35,15.633321552803936
+"QRA (5 forecasts, cal-fit)",spike onset,0.4,17.66307132548117
+"QRA (5 forecasts, cal-fit)",spike onset,0.45,19.70252789154324
+"QRA (5 forecasts, cal-fit)",spike onset,0.5,21.73480076528288
+"QRA (5 forecasts, cal-fit)",spike onset,0.55,23.730378112356654
+"QRA (5 forecasts, cal-fit)",spike onset,0.6,25.687367846971263
+"QRA (5 forecasts, cal-fit)",spike onset,0.65,27.463652266998867
+"QRA (5 forecasts, cal-fit)",spike onset,0.7,28.949118216749646
+"QRA (5 forecasts, cal-fit)",spike onset,0.75,30.054895500603394
+"QRA (5 forecasts, cal-fit)",spike onset,0.8,30.546917650070878
+"QRA (5 forecasts, cal-fit)",spike onset,0.85,30.128225074688483
+"QRA (5 forecasts, cal-fit)",spike onset,0.9,28.40453904337377
+"QRA (5 forecasts, cal-fit)",spike onset,0.95,23.21641477092727
+"QRA (5 forecasts, cal-fit)",spike onset,0.975,17.29347640818757
+"QRA (5 forecasts, cal-fit)",spike onset,0.99,8.757320629679331
+LightGBM lag (train),all,0.01,0.2890967290922645
+LightGBM lag (train),all,0.025,0.5500362302206517
+LightGBM lag (train),all,0.05,0.8730914250482948
+LightGBM lag (train),all,0.1,1.3422641950090717
+LightGBM lag (train),all,0.15,1.6656535428090613
+LightGBM lag (train),all,0.2,1.8784925937106232
+LightGBM lag (train),all,0.25,2.027094904355716
+LightGBM lag (train),all,0.3,2.151845016257597
+LightGBM lag (train),all,0.35,2.2138837080246305
+LightGBM lag (train),all,0.4,2.2538352321936057
+LightGBM lag (train),all,0.45,2.2845928396299446
+LightGBM lag (train),all,0.5,2.3171185517437043
+LightGBM lag (train),all,0.55,2.3180463784352865
+LightGBM lag (train),all,0.6,2.2851441760136635
+LightGBM lag (train),all,0.65,2.2261531524788345
+LightGBM lag (train),all,0.7,2.1448485620627706
+LightGBM lag (train),all,0.75,2.061374486189615
+LightGBM lag (train),all,0.8,2.036102291788552
+LightGBM lag (train),all,0.85,1.8754340615775233
+LightGBM lag (train),all,0.9,1.645614182039434
+LightGBM lag (train),all,0.95,1.0995716444449497
+LightGBM lag (train),all,0.975,0.7705857932252824
+LightGBM lag (train),all,0.99,0.47909653373384214
+LightGBM lag (train),body,0.01,0.23343821237247783
+LightGBM lag (train),body,0.025,0.4266065462383367
+LightGBM lag (train),body,0.05,0.6620673693687523
+LightGBM lag (train),body,0.1,0.9955705457339997
+LightGBM lag (train),body,0.15,1.2345733423689051
+LightGBM lag (train),body,0.2,1.4235726933050648
+LightGBM lag (train),body,0.25,1.5481666914366576
+LightGBM lag (train),body,0.3,1.6437703041991025
+LightGBM lag (train),body,0.35,1.7095592841675333
+LightGBM lag (train),body,0.4,1.7545458982496194
+LightGBM lag (train),body,0.45,1.7652859747813683
+LightGBM lag (train),body,0.5,1.775801104275514
+LightGBM lag (train),body,0.55,1.7669187212920678
+LightGBM lag (train),body,0.6,1.731985973917996
+LightGBM lag (train),body,0.65,1.6835808291591359
+LightGBM lag (train),body,0.7,1.620206433262473
+LightGBM lag (train),body,0.75,1.5363483745390718
+LightGBM lag (train),body,0.8,1.437817059781411
+LightGBM lag (train),body,0.85,1.2732569818372637
+LightGBM lag (train),body,0.9,1.0497190140996493
+LightGBM lag (train),body,0.95,0.6947411634020233
+LightGBM lag (train),body,0.975,0.4539933978300997
+LightGBM lag (train),body,0.99,0.3081267167327827
+LightGBM lag (train),spike (tail),0.01,0.9300724295948357
+LightGBM lag (train),spike (tail),0.025,1.9714795746720077
+LightGBM lag (train),spike (tail),0.05,3.303290788661642
+LightGBM lag (train),spike (tail),0.1,5.334864389920155
+LightGBM lag (train),spike (tail),0.15,6.630067791234202
+LightGBM lag (train),spike (tail),0.2,7.117450061855856
+LightGBM lag (train),spike (tail),0.25,7.5425373713502735
+LightGBM lag (train),spike (tail),0.3,8.002944967571278
+LightGBM lag (train),spike (tail),0.35,8.021794516891722
+LightGBM lag (train),spike (tail),0.4,8.003760839974612
+LightGBM lag (train),spike (tail),0.45,8.26504472892324
+LightGBM lag (train),spike (tail),0.5,8.551049143750268
+LightGBM lag (train),spike (tail),0.55,8.664953499266469
+LightGBM lag (train),spike (tail),0.6,8.655435498401102
+LightGBM lag (train),spike (tail),0.65,8.47453517034739
+LightGBM lag (train),spike (tail),0.7,8.186742522585474
+LightGBM lag (train),spike (tail),0.75,8.107690477533875
+LightGBM lag (train),spike (tail),0.8,8.926086400003046
+LightGBM lag (train),spike (tail),0.85,8.810237542890725
+LightGBM lag (train),spike (tail),0.9,8.508073787624214
+LightGBM lag (train),spike (tail),0.95,5.761688360161073
+LightGBM lag (train),spike (tail),0.975,4.416533338573238
+LightGBM lag (train),spike (tail),0.99,2.4480224892847207
+LightGBM lag (train),spike onset,0.01,0.7612568396108725
+LightGBM lag (train),spike onset,0.025,1.736831753282771
+LightGBM lag (train),spike onset,0.05,3.15803198079001
+LightGBM lag (train),spike onset,0.1,5.646483372384554
+LightGBM lag (train),spike onset,0.15,7.839118250552538
+LightGBM lag (train),spike onset,0.2,10.106428397341318
+LightGBM lag (train),spike onset,0.25,12.229209930513917
+LightGBM lag (train),spike onset,0.3,14.253566558903444
+LightGBM lag (train),spike onset,0.35,16.259925350533
+LightGBM lag (train),spike onset,0.4,18.18257858766492
+LightGBM lag (train),spike onset,0.45,19.95991319603484
+LightGBM lag (train),spike onset,0.5,21.193696137549814
+LightGBM lag (train),spike onset,0.55,22.178412315375994
+LightGBM lag (train),spike onset,0.6,22.822650411968837
+LightGBM lag (train),spike onset,0.65,22.534037593778766
+LightGBM lag (train),spike onset,0.7,20.40337643992496
+LightGBM lag (train),spike onset,0.75,17.61249651190563
+LightGBM lag (train),spike onset,0.8,17.312807593693403
+LightGBM lag (train),spike onset,0.85,16.03072060139782
+LightGBM lag (train),spike onset,0.9,14.741877779598576
+LightGBM lag (train),spike onset,0.95,9.859832386150162
+LightGBM lag (train),spike onset,0.975,6.370913489969235
+LightGBM lag (train),spike onset,0.99,3.1536759422116
+LightGBM lag (train+cal),all,0.01,0.2705362165864111
+LightGBM lag (train+cal),all,0.025,0.5308242286688317
+LightGBM lag (train+cal),all,0.05,0.8535853922020284
+LightGBM lag (train+cal),all,0.1,1.3167384042305226
+LightGBM lag (train+cal),all,0.15,1.6338961883444474
+LightGBM lag (train+cal),all,0.2,1.8394163189476103
+LightGBM lag (train+cal),all,0.25,1.9802529726355171
+LightGBM lag (train+cal),all,0.3,2.1039056166178387
+LightGBM lag (train+cal),all,0.35,2.1971859082037337
+LightGBM lag (train+cal),all,0.4,2.255976619303354
+LightGBM lag (train+cal),all,0.45,2.3023072232517694
+LightGBM lag (train+cal),all,0.5,2.3162945280884153
+LightGBM lag (train+cal),all,0.55,2.300046709447015
+LightGBM lag (train+cal),all,0.6,2.2666500294031926
+LightGBM lag (train+cal),all,0.65,2.2077390770020884
+LightGBM lag (train+cal),all,0.7,2.143701225832398
+LightGBM lag (train+cal),all,0.75,2.0747571845155206
+LightGBM lag (train+cal),all,0.8,1.9732537424605239
+LightGBM lag (train+cal),all,0.85,1.828255874457213
+LightGBM lag (train+cal),all,0.9,1.5448355736262702
+LightGBM lag (train+cal),all,0.95,1.086515869760964
+LightGBM lag (train+cal),all,0.975,0.7335783228280117
+LightGBM lag (train+cal),all,0.99,0.4371997738488817
+LightGBM lag (train+cal),body,0.01,0.20851405715254764
+LightGBM lag (train+cal),body,0.025,0.39551220432367185
+LightGBM lag (train+cal),body,0.05,0.6191460341533682
+LightGBM lag (train+cal),body,0.1,0.9362380731008811
+LightGBM lag (train+cal),body,0.15,1.1758014638127396
+LightGBM lag (train+cal),body,0.2,1.3494363218213488
+LightGBM lag (train+cal),body,0.25,1.4841027371897284
+LightGBM lag (train+cal),body,0.3,1.584743818758157
+LightGBM lag (train+cal),body,0.35,1.6581073117646832
+LightGBM lag (train+cal),body,0.4,1.7086678028233824
+LightGBM lag (train+cal),body,0.45,1.7391023927027405
+LightGBM lag (train+cal),body,0.5,1.746161866459623
+LightGBM lag (train+cal),body,0.55,1.7376233836659898
+LightGBM lag (train+cal),body,0.6,1.7052569968490199
+LightGBM lag (train+cal),body,0.65,1.6593745620229945
+LightGBM lag (train+cal),body,0.7,1.6040317274447682
+LightGBM lag (train+cal),body,0.75,1.5130599217395329
+LightGBM lag (train+cal),body,0.8,1.4123233987948831
+LightGBM lag (train+cal),body,0.85,1.251882497573381
+LightGBM lag (train+cal),body,0.9,1.0283667307379996
+LightGBM lag (train+cal),body,0.95,0.688914009227079
+LightGBM lag (train+cal),body,0.975,0.45043552749538274
+LightGBM lag (train+cal),body,0.99,0.27789111567914493
+LightGBM lag (train+cal),spike (tail),0.01,0.9847970239655972
+LightGBM lag (train+cal),spike (tail),0.025,2.089107213961298
+LightGBM lag (train+cal),spike (tail),0.05,3.553440519623919
+LightGBM lag (train+cal),spike (tail),0.1,5.698663770929677
+LightGBM lag (train+cal),spike (tail),0.15,6.909415628280561
+LightGBM lag (train+cal),spike (tail),0.2,7.482133559714516
+LightGBM lag (train+cal),spike (tail),0.25,7.694028032802069
+LightGBM lag (train+cal),spike (tail),0.3,8.082686882612007
+LightGBM lag (train+cal),spike (tail),0.35,8.405333400133298
+LightGBM lag (train+cal),spike (tail),0.4,8.558905132483963
+LightGBM lag (train+cal),spike (tail),0.45,8.788297725029906
+LightGBM lag (train+cal),spike (tail),0.5,8.882067453851556
+LightGBM lag (train+cal),spike (tail),0.55,8.777037230707535
+LightGBM lag (train+cal),spike (tail),0.6,8.73177546762297
+LightGBM lag (train+cal),spike (tail),0.65,8.522825245917604
+LightGBM lag (train+cal),spike (tail),0.7,8.358653674356944
+LightGBM lag (train+cal),spike (tail),0.75,8.543386204775112
+LightGBM lag (train+cal),spike (tail),0.8,8.433050753838918
+LightGBM lag (train+cal),spike (tail),0.85,8.465898247485276
+LightGBM lag (train+cal),spike (tail),0.9,7.49260417882834
+LightGBM lag (train+cal),spike (tail),0.95,5.665386204374677
+LightGBM lag (train+cal),spike (tail),0.975,3.994312928715721
+LightGBM lag (train+cal),spike (tail),0.99,2.271833263644531
+LightGBM lag (train+cal),spike onset,0.01,0.7627496643879823
+LightGBM lag (train+cal),spike onset,0.025,1.7001809994297334
+LightGBM lag (train+cal),spike onset,0.05,3.060267634828615
+LightGBM lag (train+cal),spike onset,0.1,5.5926622778637265
+LightGBM lag (train+cal),spike onset,0.15,7.912918813407279
+LightGBM lag (train+cal),spike onset,0.2,10.042434255843578
+LightGBM lag (train+cal),spike onset,0.25,12.127289133666979
+LightGBM lag (train+cal),spike onset,0.3,14.197799392535712
+LightGBM lag (train+cal),spike onset,0.35,16.171188299174005
+LightGBM lag (train+cal),spike onset,0.4,18.114339841430564
+LightGBM lag (train+cal),spike onset,0.45,19.77353898551869
+LightGBM lag (train+cal),spike onset,0.5,21.360300131506875
+LightGBM lag (train+cal),spike onset,0.55,22.211313395397845
+LightGBM lag (train+cal),spike onset,0.6,22.712011169715357
+LightGBM lag (train+cal),spike onset,0.65,22.729068223911586
+LightGBM lag (train+cal),spike onset,0.7,19.909748198697265
+LightGBM lag (train+cal),spike onset,0.75,18.373566364823002
+LightGBM lag (train+cal),spike onset,0.8,16.48030137323743
+LightGBM lag (train+cal),spike onset,0.85,15.776333804385828
+LightGBM lag (train+cal),spike onset,0.9,13.851754193174472
+LightGBM lag (train+cal),spike onset,0.95,9.684826714135836
+LightGBM lag (train+cal),spike onset,0.975,6.232086509898883
+LightGBM lag (train+cal),spike onset,0.99,3.3442322167955667
