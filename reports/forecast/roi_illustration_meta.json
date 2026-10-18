@@ -1,0 +1,13 @@
+{
+  "ILLUSTRATIVE": true,
+  "load_mw": 10.0,
+  "opportunity_cost_per_mwh": 150.0,
+  "annual_run_cost": 150000.0,
+  "spike_threshold": 170.318,
+  "test_days": 139.33333333333334,
+  "test_window": [
+    "2026-04-01 00:00:00",
+    "2026-08-18 07:55:00"
+  ],
+  "caveat": "Apr-Aug 2026 only (autumn/winter); annualising assumes the same spike rate all year. One-interval curtailment, no ramp limits, no rebound, no network or retail tariff effects."
+}
