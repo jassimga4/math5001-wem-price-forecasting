@@ -16,17 +16,30 @@ scripts/forecast_design.py              # ex-ante 5-minute design and frozen spl
 scripts/point_models.py                 # persistence, ridge, and LightGBM
 scripts/conformal.py                    # sliding-window and fixed split conformal intervals
 scripts/qra.py                          # quantile regression averaging comparison
+scripts/qra_variants.py                 # recent-window QRA / QRM / Q-Ave / LightGBM quantile study
 scripts/regime_switch.py                # calibration-chosen LightGBM / persistence gate
+scripts/pull_open_meteo.py              # archived day-ahead weather forecasts (Open-Meteo Previous Runs)
+scripts/pull_aemo_predispatch.py        # system-level fields from AEMO WEM pre-dispatch runs
+scripts/external_features.py            # leakage-safe external features keyed to forecast origins
+scripts/spike_onset.py                  # stage-1 hurdle onset model vs persistence, LightGBM, regime switch
+scripts/price_path.py                   # recent price-path features known at the origin
+scripts/spike_forecaster.py             # implemented spike forecaster: fit, save/load, forecast CLI
+scripts/spike_figures.py                # reliability, episode and first-interval CRPS figures
+configs/spike_forecaster.json           # frozen spike forecaster config (chosen on calibration)
+models/spike_forecaster.joblib          # fitted spike forecaster
+data/external/                          # external pulls, one README per source
 scripts/experiment.py                   # fit point models, conformal tables, and QRA
 scripts/metrics.py                      # MAE, pinball, interval scores, and CRPS
-docs/spike_forecast_next_steps.md       # onset-model plan; new series are not in the panel yet
+docs/spike_forecast_next_steps.md       # onset-model plan
+docs/spike_stage1_results.md            # stage-1 sources, availability rules and results
 notebooks/00_load_panel.ipynb            # load the processed panel
 notebooks/01_eda_correlation.ipynb       # descriptive EDA (not used to tune the test set)
 notebooks/02_baseline_models.ipynb       # ex-ante 5-minute baselines
 notebooks/03_final_point_model.ipynb     # LightGBM fit on the training window only
 notebooks/04_sliding_conformal.ipynb     # sliding-window conformal intervals
 models/lgbm_5min_ahead.joblib            # LightGBM saved by the experiment
-reports/forecast/                        # point, conformal, QRA, and regime-switch tables
+reports/forecast/                        # point, conformal, QRA, regime-switch and spike tables
+reports/figures/spike/                   # spike forecaster figures
 .env.example                            # copy to .env
 Dockerfile
 docker-compose.yml
@@ -114,15 +127,48 @@ Frozen periods:
 | Test | after the calibration end, untouched by tuning |
 
 ```bash
-python -m unittest tests/test_forecast_design.py tests/test_point_models.py tests/test_conformal.py tests/test_qra.py
+python -m unittest tests/test_forecast_design.py tests/test_point_models.py tests/test_conformal.py tests/test_qra.py tests/test_qra_variants.py
 python scripts/experiment.py
 ```
 
 Tables are written to `reports/forecast/`. Hyperparameters and the conformal window are chosen on pre-test data only. The LightGBM forecast is the 5-minute lag plus a price change fit under MAE. Conformal coverage, width, pinball and CRPS are reported for the test period and split by month and by tails defined from training quantiles of MCP. Contemporaneous STEM is an explicit day-ahead assumption, not a verified publication timestamp.
 
-Quantile regression averaging is a comparison, not a replacement for the absolute-residual conformal intervals. `scripts/qra.py` regresses calibration MCP on the 5-minute, 30-minute and 1-day persistence forecasts, the ridge forecast, and the LightGBM forecast. Those are the same origins and the same 5-minute horizon as the conformal experiment. The fit does not see the test set. Test scores are written to `reports/forecast/qra_test.csv`, `qra_by_month.csv`, `qra_regime.csv`, and `qra_crps.csv`. `crps_empirical` is the sliding residual-sample CRPS and is only filled for the frozen conformal rows. `crps_quantile_integral` uses the same quantile grid for QRA and for the frozen conformal residual window; it is not the same estimator as `crps_empirical`.
+Quantile regression averaging is a comparison, not a replacement for the absolute-residual conformal intervals. `scripts/qra.py` implements standard QRA (Nowotarski and Weron, 2015): one linear quantile regression of MCP on a pool of point forecasts. By default those are the 5-minute, 30-minute and 1-day persistence forecasts, the ridge forecast, and the LightGBM forecast. Those are the same origins and the same 5-minute horizon as the conformal experiment. The fit does not see the test set. Test scores are written to `reports/forecast/qra_test.csv`, `qra_by_month.csv`, `qra_regime.csv`, and `qra_crps.csv`. `crps_empirical` is the sliding residual-sample CRPS and is only filled for the frozen conformal rows. `crps_quantile_integral` uses the same quantile grid for QRA and for the frozen conformal residual window; it is not the same estimator as `crps_empirical`.
 
 `python scripts/qra.py` does not refit LightGBM. It reloads `models/lgbm_5min_ahead.joblib`, refits ridge on the training window, recomputes persistence from lags, and reads the frozen conformal method and window from `reports/forecast/experiment_meta.json` without choosing them again. `python scripts/experiment.py` refits the point models, selects the conformal window on calibration, and then writes the same QRA tables.
+
+### QRA variants and recent calibration
+
+`scripts/qra_variants.py` compares the same ex-ante forecasts under three combiners from the electricity-price forecasting literature, plus a native LightGBM quantile forecast:
+
+| Combiner | What it does |
+| --- | --- |
+| `qra` | Standard QRA: QuantReg of MCP on the member point forecasts (Nowotarski and Weron, 2015) |
+| `qrm` | QuantReg of MCP on the mean of the member point forecasts (Marcjasz, Uniejewski and Weron, 2020) |
+| `qave` | Quantile averaging: each member first becomes a quantile forecast (univariate QuantReg of MCP on that point forecast, or native LightGBM quantiles), then the sorted member quantiles are averaged level by level |
+| `lightgbm_quantile` | LightGBM with the quantile objective, one model per level, fit on the training window only with the frozen point-model hyperparameters |
+
+Member subsets include all five forecasts, LightGBM only, LightGBM + 5-minute persistence, LightGBM + ridge + 5-minute persistence, and (for `qave`) those three plus native LightGBM quantiles. Each calibration-fitted variant is fit on the most recent 28, 56 or 91 days of available pre-test data, or on all of it. Selection uses only an inner split of calibration: windows end on 2026-02-28 23:55 and are scored on March 2026. Among variants with March 90% coverage in [0.88, 0.92], the narrowest mean 90% width is selected (ties: lower quantile-integral CRPS). The selected variant is refit with the same window length ending 2026-03-31 23:55 and scored once on test. Test outcomes are never used to fit, select, or shrink intervals. Tables: `reports/forecast/qra_variants_calib.csv`, `qra_variants_test.csv`, `qra_variants_by_month.csv`, `qra_variants_meta.json`.
+
+```bash
+python -m unittest tests/test_forecast_design.py tests/test_point_models.py tests/test_conformal.py tests/test_qra.py tests/test_qra_variants.py
+python scripts/qra_variants.py
+```
+
+Test results:
+
+- **Selected variant:** `qra:lgbm_p5@28d` covers 0.868 with width 16.7 at 90%, and scores 3.916 quantile-integral CRPS (`qra_variants_test.csv`). It under-covers on test, although it covered 0.915 in March.
+- **PR 1 QRA** (all five members, all calibration): 0.930, 26.1 and 3.921.
+- **Native LightGBM quantile:** 0.927, 34.3 and 3.744.
+
+`python scripts/qra_figures.py` draws these from the stored csvs into `reports/figures/qra/`, as PNG and PDF, without refitting:
+
+- coverage against width;
+- CRPS by variant;
+- the recency-window effect;
+- pinball loss by quantile level.
+
+The QRA rows are also in `reports/forecast/final_master_table.md`, marked † because their CRPS is the quantile integral, and in `docs/final_results_summary.md`.
 
 ## Regime switch and spike next steps
 
@@ -130,8 +176,42 @@ Quantile regression averaging is a comparison, not a replacement for the absolut
 
 `docs/spike_forecast_next_steps.md` is the plan for the spike piece: pre-dispatch demand, projected DPV, outages known by the origin, and a Bureau forecast, then a hurdle or pinball model beside the current tree. Those series are not in the panel yet. QRA stays the blend benchmark, not the spike method.
 
+## Spike stage 1: external data and an onset model
+
+`data/external/` holds archived day-ahead weather forecasts (Open-Meteo, ECMWF and GFS) and an extract of AEMO WEM pre-dispatch runs. Each folder has a README with the URL, time zone and availability rule. `scripts/external_features.py` uses a value only if it was published by the forecast origin. `tests/test_external_features.py` checks that, including that changing anything published after the origin cannot change a feature. `scripts/spike_onset.py` fits a hurdle model on train, picks its cutoffs on calibration and scores test once. Results and caveats are in `docs/spike_stage1_results.md`.
+
+```bash
+python scripts/pull_open_meteo.py                  # weather (cached responses are reused)
+python scripts/pull_aemo_predispatch.py --pass 1   # slow: about 1 h for the even-hour runs
+python scripts/pull_aemo_predispatch.py --pass 2   # odd-hour runs (stage 1b), about 1 h
+python scripts/pull_aemo_predispatch.py --pass 3   # half-hour runs (stage 1c), about 1.5 h
+python scripts/pull_aemo_predispatch.py --consolidate
+python -m unittest tests/test_external_features.py
+python scripts/spike_onset.py
+```
+
+The onset model needs `remotezip` for the pre-dispatch pull only. Features are built from the committed `data/external/aemo_predispatch/predispatch_runs_first9h.parquet` (about 31 MB, all half-hourly runs), so a fresh clone reproduces the results without the pull; the per-day extracts are used only if that file is absent.
+
+## Spike forecaster
+
+The implemented spike forecaster is frozen in `configs/spike_forecaster.json`. It uses panel and price-path features and a HistGradientBoosting spike classifier, LightGBM quantile size models, a mixture around the regime switch, and the regime switch as the point forecast. For each target interval, at origin T − 5 min, it gives the point forecast, P(spike up), P(spike down), quantiles (q01 to q99) and a spike alert. See "Implemented spike forecaster" in `docs/spike_stage1_results.md`.
+
+```bash
+python scripts/spike_forecaster.py fit        # fit on train, cutoffs on calibration; saves models/spike_forecaster.joblib
+python scripts/spike_forecaster.py evaluate   # test-window forecasts and metrics; checks they reproduce the frozen row
+python scripts/spike_forecaster.py forecast --start "2026-08-17 00:00" --end "2026-08-18 07:55" --out forecasts.csv
+python scripts/spike_figures.py               # figures in reports/figures/spike/
+python -m pytest tests/test_spike_forecaster.py
+```
+
 If you still see `Missing optional dependency 'pyarrow'`, the notebook or terminal is using a different Python:
 
 ```bash
 python -m pip install pyarrow
 ```
+
+## Conformal predictive systems and final results
+
+- `python scripts/spike_cps.py` fits the CPS variants on the calibration window: split, Mondrian by spike risk (fixed and sliding) and PIT recalibration of the spike forecaster. It also fits isotonic recalibration of P(spike up). It then scores everything on calibration (cross-fitted) and on test, and writes `reports/forecast/final_cps_*.csv`.
+- `python scripts/final_report.py` builds `reports/forecast/final_master_table.{csv,md}` and the figures in `reports/figures/final/`.
+- Report-ready summary: `docs/final_results_summary.md`.

@@ -1,12 +1,20 @@
 """Quantile regression averaging of the existing ex-ante point forecasts.
 
-The regressors are the 5-minute, 30-minute and 1-day persistence forecasts, the
-ridge forecast, and the LightGBM forecast. Those forecasts already use the
-5-minute horizon and the ex-ante information set in scripts/forecast_design.py.
-Quantile regression is fit on calibration origins only. Test outcomes are used
-for scoring, not for the fit, and quantiles are not shrunk to chase test
-coverage. Predicted quantiles are rearranged by sorting each row so the
-quantile function is nondecreasing. That sort does not use the outcome.
+This module implements the original QRA comparison used on `main`: one linear
+quantile regression of MCP on a pool of point forecasts (Nowotarski and Weron,
+2015). By default the regressors are the 5-minute, 30-minute and 1-day
+persistence forecasts, the ridge forecast, and the LightGBM forecast. Those
+forecasts already use the 5-minute horizon and the ex-ante information set in
+scripts/forecast_design.py. Quantile regression is fit on calibration origins
+only. Test outcomes are used for scoring, not for the fit, and quantiles are
+not shrunk to chase test coverage. Predicted quantiles are rearranged by
+sorting each row so the quantile function is nondecreasing. That sort does not
+use the outcome.
+
+`fit_qra` accepts a `columns` argument so a subset of the same point forecasts
+can be used. Recent calibration windows, QRM, quantile averaging, and a
+native LightGBM quantile member are scored and selected in
+scripts/qra_variants.py; that script never uses test outcomes for selection.
 
 This is not a replacement for the absolute-residual sliding conformal intervals.
 mapie is not used: it does not fit this regression.
@@ -59,11 +67,11 @@ def level_name(level: float) -> str:
     return f"{float(level):.3f}"
 
 
-def _design(forecasts: pd.DataFrame) -> np.ndarray:
-    missing = [name for name in QRA_FORECASTS if name not in forecasts.columns]
+def _design(forecasts: pd.DataFrame, columns: tuple[str, ...] = QRA_FORECASTS) -> np.ndarray:
+    missing = [name for name in columns if name not in forecasts.columns]
     if missing:
         raise ValueError(f"QRA forecasts missing: {missing}")
-    values = forecasts.loc[:, list(QRA_FORECASTS)].to_numpy(dtype=float)
+    values = forecasts.loc[:, list(columns)].to_numpy(dtype=float)
     if not np.isfinite(values).all():
         raise ValueError("QRA design contains a non-finite forecast")
     return sm.add_constant(values, has_constant="add")
@@ -74,17 +82,25 @@ def fit_qra(
     y: pd.Series,
     levels: np.ndarray | None = None,
     max_iter: int = 2000,
+    columns: tuple[str, ...] = QRA_FORECASTS,
 ) -> pd.DataFrame:
-    """Fit one linear quantile regression per level. `y` must be the calibration target."""
+    """Fit one linear quantile regression per level. `y` must be the calibration target.
+
+    `columns` names the point forecasts used as regressors (Nowotarski and Weron
+    2015). The default is the five forecasts of the original comparison.
+    """
+    columns = tuple(columns)
+    if not columns:
+        raise ValueError("QRA needs at least one forecast column")
     levels = comparison_levels() if levels is None else np.asarray(levels, dtype=float)
     if len(levels) < 2 or np.any(np.diff(levels) <= 0):
         raise ValueError("QRA levels must be strictly increasing")
-    aligned = forecasts.copy()
+    aligned = forecasts.loc[:, list(columns)].copy()
     aligned["y"] = y.reindex(forecasts.index)
     aligned = aligned.dropna()
-    if len(aligned) <= len(QRA_FORECASTS) + 1:
+    if len(aligned) <= len(columns) + 1:
         raise ValueError("calibration sample is shorter than the QRA design")
-    design = _design(aligned)
+    design = _design(aligned, columns)
     target = aligned["y"].to_numpy(dtype=float)
     rows = []
     for level in levels:
@@ -100,25 +116,32 @@ def fit_qra(
             "converged": not hit_limit,
             COEF_INTERCEPT: float(params[0]),
         }
-        for name, value in zip(QRA_FORECASTS, params[1:]):
+        for name, value in zip(columns, params[1:]):
             row[name] = float(value)
         rows.append(row)
     return pd.DataFrame(rows)
 
 
-def _coefficient_matrix(coefficients: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+def coefficient_columns(coefficients: pd.DataFrame) -> tuple[str, ...]:
+    """Forecast columns of a coefficient table, in the order they were fit."""
+    skip = {"level", "converged", COEF_INTERCEPT}
+    return tuple(name for name in coefficients.columns if name not in skip)
+
+
+def _coefficient_matrix(coefficients: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, tuple[str, ...]]:
     levels = coefficients["level"].to_numpy(dtype=float)
     order = np.argsort(levels)
     levels = levels[order]
-    columns = [COEF_INTERCEPT, *QRA_FORECASTS]
+    forecast_columns = coefficient_columns(coefficients)
+    columns = [COEF_INTERCEPT, *forecast_columns]
     matrix = coefficients.loc[:, columns].to_numpy(dtype=float)[order]
-    return levels, matrix
+    return levels, matrix, forecast_columns
 
 
 def predict_qra(forecasts: pd.DataFrame, coefficients: pd.DataFrame) -> tuple[pd.DataFrame, float]:
     """Return rearranged quantiles and the share of rows that crossed before the sort."""
-    levels, matrix = _coefficient_matrix(coefficients)
-    raw = _design(forecasts) @ matrix.T
+    levels, matrix, forecast_columns = _coefficient_matrix(coefficients)
+    raw = _design(forecasts, forecast_columns) @ matrix.T
     if raw.shape[1] > 1:
         crossed = np.any(np.diff(raw, axis=1) < 0, axis=1)
         share = float(np.mean(crossed))
