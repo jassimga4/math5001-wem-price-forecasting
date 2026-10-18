@@ -1,217 +1,201 @@
-# MATH5001 — WEM electricity price forecasting
+# Forecasting electricity price spikes in Western Australia's wholesale market
 
-Curtin MATH5001 project: probabilistic electricity price forecasting for the Western Australia Wholesale Electricity Market (WEM), using conformal prediction.
+**Probabilistic 5-minute price forecasts for the WEM (Wholesale Electricity Market), built to warn about price spikes early enough for batteries, flexible industrial loads and retailers to act.**
 
-Processed modelling files live in this repository. Raw AEMO CSVs (~2.5 GB) stay local and are not committed.
+Curtin University MATH5001 project. Python, LightGBM, quantile regression, conformal prediction, leakage-tested time-series design.
 
-## Layout
+| Headline (test window 1 Apr – 18 Aug 2026, 40,127 five-minute intervals, never used for fitting or tuning) | |
+| --- | --- |
+| Gradient-boosted (LightGBM) quantile model vs the QRA benchmark: average pinball loss | **−7.2%** (1.686 vs 1.817 $/MWh) |
+| Same, at the **first interval of a price spike** (403 onsets) | **−24.1%** (13.23 vs 17.44) |
+| 90% prediction-interval coverage during spike intervals | **0.94** LightGBM vs **0.68** QRA |
+| Point-forecast MAE vs naive persistence | 4.65 vs 4.75 $/MWh (−2%, block-bootstrap range below zero) |
 
-```
-data/processed/wem_5min_panel.parquet   # 5-minute modelling panel
-data/processed/wem_5min_panel_sample.csv
-scripts/build_panel.py                  # rebuild the panel from raw AEMO CSVs
-scripts/inspect_panel.py                # print panel shape / coverage
-scripts/paths.py                        # POSIX path + .env helpers
-scripts/forecast_design.py              # ex-ante 5-minute design and frozen splits
-scripts/point_models.py                 # persistence, ridge, and LightGBM
-scripts/conformal.py                    # sliding-window and fixed split conformal intervals
-scripts/qra.py                          # quantile regression averaging comparison
-scripts/qra_variants.py                 # recent-window QRA / QRM / Q-Ave / LightGBM quantile study
-scripts/regime_switch.py                # calibration-chosen LightGBM / persistence gate
-scripts/pull_open_meteo.py              # archived day-ahead weather forecasts (Open-Meteo Previous Runs)
-scripts/pull_aemo_predispatch.py        # system-level fields from AEMO WEM pre-dispatch runs
-scripts/external_features.py            # leakage-safe external features keyed to forecast origins
-scripts/spike_onset.py                  # stage-1 hurdle onset model vs persistence, LightGBM, regime switch
-scripts/price_path.py                   # recent price-path features known at the origin
-scripts/spike_forecaster.py             # implemented spike forecaster: fit, save/load, forecast CLI
-scripts/spike_figures.py                # reliability, episode and first-interval CRPS figures
-configs/spike_forecaster.json           # frozen spike forecaster config (chosen on calibration)
-models/spike_forecaster.joblib          # fitted spike forecaster
-data/external/                          # external pulls, one README per source
-scripts/experiment.py                   # fit point models, conformal tables, and QRA
-scripts/metrics.py                      # MAE, pinball, interval scores, and CRPS
-docs/spike_forecast_next_steps.md       # onset-model plan
-docs/spike_stage1_results.md            # stage-1 sources, availability rules and results
-notebooks/00_load_panel.ipynb            # load the processed panel
-notebooks/01_eda_correlation.ipynb       # descriptive EDA (not used to tune the test set)
-notebooks/02_baseline_models.ipynb       # ex-ante 5-minute baselines
-notebooks/03_final_point_model.ipynb     # LightGBM fit on the training window only
-notebooks/04_sliding_conformal.ipynb     # sliding-window conformal intervals
-models/lgbm_5min_ahead.joblib            # LightGBM saved by the experiment
-reports/forecast/                        # point, conformal, QRA, regime-switch and spike tables
-reports/figures/spike/                   # spike forecaster figures
-.env.example                            # copy to .env
-Dockerfile
-docker-compose.yml
-```
+Every number in this README comes from a script in this repository and a CSV in `reports/forecast/`. Business-value figures are labelled **illustrative** and show their formula and assumptions.
 
-The panel is a 5-minute table (price as the spine) covering 1 Oct 2023 onwards: market clearing price, demand, distributed PV, STEM, RTP, SCADA, and calendar features.
+---
 
-## Configuration
+## 1. The problem
 
-Copy the example env file and edit POSIX paths as needed:
+The WEM moved to 5-minute dispatch on 1 October 2023. Most of the time the market clearing price (MCP) sits between about $97 and $133/MWh (the test-window interquartile range). Occasionally it jumps above $170/MWh, and in the test window it reached $983.87/MWh. Those spike intervals drive a large share of energy cost and risk for anyone exposed to spot prices:
 
-```bash
-cp .env.example .env
-```
+- a **battery operator** wants to be charged, and to hold charge, just before a spike;
+- a **large industrial load** (a mine site, a processing plant, a desalination plant) can shed or shift load for a few minutes if it gets a warning;
+- a **retailer** needs to know how much spot exposure it is carrying and how wide the plausible price range is.
 
-| Variable | Default | Purpose |
+A single "best guess" price forecast isn't enough for those decisions. They need the full **range** of plausible prices, and in particular a well-calibrated upper tail. This project forecasts that range, as 23 quantiles from the 1st to the 99th percentile, for every 5-minute interval, 5 minutes ahead.
+
+## 2. Data
+
+- **Source:** public AEMO WEM data, built into one 5-minute panel by `scripts/build_panel.py`: `data/processed/wem_5min_panel.parquet`, 302,964 intervals from 1 Oct 2023 to 18 Aug 2026.
+- **Fields:** MCP, operational demand, distributed rooftop PV, withdrawal, FCAS (frequency control) prices, real-time price, STEM (day-ahead) price and bid/offer imbalance, plus calendar fields.
+- **Spike stage (optional extras):** archived day-ahead weather forecasts (Open-Meteo) and AEMO pre-dispatch runs in `data/external/`, each attached only from its publication time.
+- **Ex-ante design (no look-ahead):** the forecast for interval *t* is made at *t* − 5 min, using only data published by then (`scripts/forecast_design.py`, with leakage tests in `tests/`).
+- **Frozen chronological splits:**
+
+| Split | Period | Model-ready intervals | Used for |
+| --- | --- | ---: | --- |
+| Train | to 30 Sep 2025 | 210,105 | fitting point and LightGBM models |
+| Calibration | 1 Oct 2025 – 31 Mar 2026 | 52,397 | fitting QRA, choosing windows and cutoffs |
+| Test | 1 Apr – 18 Aug 2026 | 40,127 | scored once at the end |
+
+- **Spike definitions:** a **spike interval** has a price at or above the training-period 95th percentile, $170.32/MWh. That gives 3,206 test intervals (8.0%). A **spike onset** is the first interval of a spike, where the previous price was still below the threshold. There are 403 onsets in test, and they are the hardest and most valuable intervals to forecast.
+
+## 3. Approach
+
+1. **Point forecasts:** persistence (5-minute, 30-minute and 1-day), ridge regression, and LightGBM trained under absolute error on the 5-minute price change (`scripts/point_models.py`).
+2. **QRA, the benchmark** (`scripts/qra.py`): Quantile Regression Averaging (Nowotarski & Weron, 2015) is a standard method in electricity-price forecasting. It fits a linear quantile regression of the price on the five point forecasts, one regression per quantile level, on the calibration window. Variants with recent windows, QRM and quantile averaging are in `scripts/qra_variants.py`.
+3. **LightGBM lag-feature quantile baseline** (`scripts/lgbm_vs_qra.py`, new in this branch):
+   - **Models:** one LightGBM quantile model for each of QRA's 23 levels, plus an L1 point model.
+   - **Features:** price lags of 5, 10, 15, 20, 25, 30 and 60 minutes, 2 hours, 1 day and 7 days, plus rolling mean, standard deviation, max and min of the price over the last 30 and 60 minutes. On top of those, lagged demand, rooftop PV, withdrawal and FCAS, the last complete real-time price, STEM, and calendar fields. 31 features in total, all known at the forecast origin.
+   - **Fitting:** hyperparameters are frozen from the original point model, which was tuned on an inner split of train, so nothing is tuned on calibration or test. The models are fit on train only, and again on train plus calibration, which is the same recent data QRA sees.
+   - **Same test origins as QRA:** the QRA quantiles are regenerated from the committed coefficients with no refit, and checked against the stored tables before scoring.
+4. **Spike forecaster and conformal methods** (earlier stages of the project): a hurdle model with a spike classifier, conformal prediction intervals and conformal predictive systems. These are summarised in §4.3 and documented in `docs/final_results_summary.md`.
+
+**Metrics:**
+- **Pinball (quantile) loss** at each level, and averaged over levels. This is the standard proper score for quantile forecasts, and lower is better.
+- **CRPS:** integrated over the 0.01–0.99 quantile levels. This is the same estimator as the repo's QRA tables.
+- **MAE** of the point forecast.
+- **Interval coverage and width** at 50, 80, 90 and 95%.
+- **90% moving-block bootstrap ranges** on per-interval differences.
+
+## 4. Results
+
+### 4.1 LightGBM vs QRA, all test intervals
+
+| Model | Avg pinball | CRPS (0.01–0.99) | Point MAE | 50% cov | 80% cov | 90% cov | 90% width | 95% cov |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| QRA (5 forecasts, calibration-fit) | 1.817 | 3.921 | 4.744¹ | 0.531 | 0.829 | 0.930 | 26.1 | 0.975 |
+| LightGBM lag, train only | **1.686** | 3.685 | 4.647 | 0.566 | 0.840 | 0.920 | 31.5 | 0.962 |
+| LightGBM lag, train + calibration | **1.661** | **3.635** | **4.624** | 0.563 | 0.834 | 0.914 | 30.6 | 0.956 |
+| *Reference: persistence* | | | 4.745 | | | | | |
+| *Reference: original LightGBM point model* | | | 4.753 | | | | | |
+
+¹ QRA has no separate point model, so its median (q0.50) is used. Units are $/MWh. Source: `reports/forecast/lgbm_vs_qra_summary.csv` and `lgbm_vs_qra_reference_mae.csv`.
+
+- **Pinball loss:** LightGBM has lower loss than QRA at **all 23 quantile levels**, with the biggest gains in the tails. At q0.01 it's 0.289 against 0.481, and at q0.99 it's 0.479 against 0.615 (`lgbm_vs_qra_pinball_by_level.csv`).
+- **CRPS difference vs QRA (train-only LightGBM):** −0.236, with a bootstrap range of [−0.292, −0.183].
+- **Earlier result:** the earlier native LightGBM quantile model, which had no extra lag or rolling features, scored 3.744 CRPS with a 90% width of 34.3 (`qra_variants_test.csv`). The extra lag features improve both.
+
+### 4.2 Spike periods
+
+| Subset | Model | Avg pinball | CRPS | Point MAE | 90% cov | 90% width |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Spike intervals (n = 3,206) | QRA | 7.107 | 15.340 | 17.997 | 0.680 | 35.3 |
+| | LightGBM, train | **6.723** | **14.566** | 17.659 | **0.937** | 158.9 |
+| | LightGBM, train+cal | 6.799 | 14.766 | 17.974 | **0.940** | 161.7 |
+| | *Persistence* | | | *16.003* | | |
+| Spike onsets (n = 403) | QRA | 17.436 | 37.501 | 43.470 | 0.409 | 34.6 |
+| | LightGBM, train | **13.233** | **29.290** | 43.235 | **0.757** | 143.9 |
+| | LightGBM, train+cal | **13.136** | **29.068** | **42.902** | **0.767** | 142.0 |
+| | *Persistence* | | | *45.831* | | |
+
+CRPS difference vs QRA, with 90% bootstrap ranges (`lgbm_vs_qra_bootstrap.csv`):
+
+| Subset | LightGBM, train | LightGBM, train + calibration |
 | --- | --- | --- |
-| `PANEL_PATH` | `data/processed/wem_5min_panel.parquet` | Processed modelling panel (POSIX path, relative to the project root) |
-| `RAW_DATA_DIR` | `raw` | Directory of downloaded AEMO CSVs for `scripts/build_panel.py` |
-| `JUPYTER_TOKEN` | `math5001` | JupyterLab token |
-| `JUPYTER_PORT` | `8888` | Host port for JupyterLab |
-| `TZ` | `Australia/Perth` | Container timezone |
+| Spike intervals | −0.774 [−1.315, −0.254] | −0.574 [−1.179, −0.038] |
+| Spike onsets | −8.211 [−10.821, −5.199] | −8.433 [−10.965, −5.505] |
 
-Relative paths in `.env` use forward slashes and are resolved from the project root.
+**What this means:**
+- **Spike-time intervals:** QRA is a linear blend of point forecasts, so its intervals stay narrow when a spike is coming, and they miss the spike. LightGBM's quantile models widen sharply in spike-prone conditions. It catches about 94% of spike prices in its 90% interval, against QRA's 68%.
+- **Point forecasts:** the gains are real but small, a 2% MAE reduction overall. Once a spike is under way, plain persistence is still the best point forecast inside spike intervals. The value of the model is in the **distribution**, especially at onset, not in the point.
+- **Quantile crossing:** the 23 separately trained quantile models cross on almost every row (99.9%) before sorting. Sorting fixes this, as it does for QRA's 13%. A joint or monotone-constrained model would be cleaner.
 
-## Docker
+**Figures** (`reports/figures/lgbm_vs_qra/`):
 
-Docker Desktop must be running. The image installs packages into `/opt/venv` (not bind-mounted), so the container does not use a host virtualenv.
+| | |
+| --- | --- |
+| ![Pinball loss by quantile](reports/figures/lgbm_vs_qra/pinball_by_level.png) | ![Coverage](reports/figures/lgbm_vs_qra/interval_coverage.png) |
+| ![Relative to QRA](reports/figures/lgbm_vs_qra/relative_to_qra_by_period.png) | |
 
-```bash
-docker compose build
+### 4.3 Context: the rest of the project
+
+These rows come from `reports/forecast/final_master_table.md` (test window, exact CRPS unless marked †):
+
+| Model | CRPS | Spike-onset CRPS | 90% cov | MAE |
+| --- | ---: | ---: | ---: | ---: |
+| Persistence + sliding residual window | 4.176 | 42.50 | 0.898 | 4.745 |
+| LightGBM + sliding conformal interval | 4.033 | 41.29 | 0.898 | 4.753 |
+| QRA † | 3.921 | – | 0.930 | – |
+| Spike forecaster (hurdle model, frozen) | 3.915 | **29.08** | 0.908 | 4.650 |
+| Conformal predictive system, Mondrian by spike risk (sliding) | 3.885 | 37.78 | 0.900 | 4.650 |
+
+The dedicated spike forecaster and the LightGBM lag baseline land in the same range at onset: exact CRPS 29.08, against a quantile-integral CRPS of 29.29 for the baseline. These two estimators aren't identical, so treat this as indicative. Both are about 30% below persistence (42.50) at onset, and the baseline is 22% below QRA (37.50, on the same estimator).
+
+## 5. Business value
+
+A 5-minute horizon is an **automation** horizon. It's for a battery controller, an energy management system or a load-control PLC to act on, not for a trading desk to deliberate over. How each user benefits:
+
+| User | Decision | What the forecast adds |
+| --- | --- | --- |
+| Battery operator | Hold charge or pre-charge before a likely spike, and avoid discharging cheaply just before one | The upper quantiles give an early, calibrated spike signal, which sets the opportunity cost of discharging now |
+| Large industrial load (mining, processing, water) | Shed or shift flexible load for an interval | An alert when the 95th-percentile forecast crosses the spike threshold, and a known false-alarm rate |
+| Retailer or portfolio manager | Spot-exposure risk, hedge cover, price caps | Calibrated intervals for value-at-risk on spot exposure. Longer horizons are a next step |
+
+### Illustrative ROI: flexible industrial load
+
+> **ILLUSTRATIVE ONLY.** The load size, opportunity cost and run cost are assumptions, not client data. Prices and forecasts are the real test-window values. The alert rule was fixed in advance, not tuned. Script: `scripts/roi_illustration.py`. Output: `reports/forecast/roi_illustration.csv`.
+
+The assumptions are a **10 MW** curtailable load paying spot prices, lost production worth **$150/MWh**, and an annual cost of **$150k** to run the forecast and control integration. In each alerted interval the load curtails for 5 minutes.
+
+```
+value        = Σ over alerted intervals  LOAD_MW × (5/60) h × (MCP_t − OPP_COST)
+annualised   = value × 365 / 139.3 test days
+uplift       = annualised(forecast rule) − annualised(reactive rule: alert when last price ≥ $170.32)
+ROI          = (uplift − annual run cost) / annual run cost
+break-even   = annual run cost / uplift per MW
 ```
 
-JupyterLab (token from `JUPYTER_TOKEN` in `.env`):
+| Alert rule | Alerts | Onsets caught | Share of alerts in spikes | Uplift vs reactive ($/yr) | Uplift per MW ($/MW/yr) | Break-even load |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Reactive, no forecast (last price ≥ $170.32) | 3,206 | 0% | 87% | – | – | – |
+| QRA q95 ≥ $170.32 | 4,715 | 75% | 66% | 57,532 | 5,753 | 26 MW |
+| LightGBM (train) q95 ≥ $170.32 | 5,459 | 89% | 58% | 49,034 | 4,903 | 31 MW |
+| Perfect foresight (curtail whenever MCP > $150) | 5,760 | 100% | 56% | 90,917 | 9,092 | 16.5 MW |
+
+**Reading it:**
+- **Break-even:** at 10 MW the uplift doesn't cover a $150k run cost. ROI is −62% for QRA and −67% for LightGBM. The uplift scales linearly with flexible load, though, so the case breaks even at about **26–31 MW**, a realistic size for WA mine sites and mineral processing plants. Above that, the case is positive.
+- **Accuracy vs dollars:** the better-scored model doesn't automatically make more money. LightGBM catches more onsets (89% against 75%) but raises more false alarms, so a fixed q95 rule earns slightly less with it. In production, the alert threshold should be **tuned on calibration for each model against the actual payoff**. That decision layer is a listed next step.
+- **Annualising:** the test window covers autumn and winter only, so annualising assumes the same spike rate all year. The calculation also ignores ramp limits, rebound consumption and network tariffs.
+
+## 6. Limitations and next steps
+
+- **Horizon:** this is 5 minutes ahead only. Hedging decisions need horizons from 30 minutes to day-ahead, using pre-dispatch and weather inputs. Those inputs are already ingested, in `data/external/`.
+- **Test window:** a single one, 4.5 months long. Rolling-origin evaluation over more seasons is next.
+- **Decision layer:** tune alert thresholds on calibration against a stated payoff, and optimise battery dispatch with the quantiles as inputs.
+- **Quantile models:** use monotone or joint quantile models to avoid crossing, and recalibrate under regime shift.
+- **More:** the full list is in `docs/spike_forecast_next_steps.md` and `docs/final_results_summary.md`.
+
+## 7. How to run
 
 ```bash
-docker compose up lab
-```
-
-Then open http://localhost:8888 and enter the token.
-
-Interactive shell:
-
-```bash
-docker compose run --rm shell
-```
-
-Confirm the panel loads:
-
-```bash
-docker compose run --rm inspect
-```
-
-## Rebuild the panel
-
-Put raw AEMO CSVs under `RAW_DATA_DIR` (default `raw/`), or set that variable in `.env` to a POSIX path visible in the container.
-
-```bash
-docker compose run --rm shell python scripts/build_panel.py
-```
-
-## Local Python (without Docker)
-
-Create a virtualenv at `.venv` if you do not already have one:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 python -m pip install -r requirements.txt
-python scripts/inspect_panel.py
+
+python -m pytest -q                     # unit and leakage tests
+python scripts/lgbm_vs_qra.py           # LightGBM vs QRA: about 3 min on 8 cores; writes reports/forecast/lgbm_vs_qra_* and figures
+python scripts/lgbm_vs_qra.py figures   # redraw figures from stored CSVs
+python scripts/roi_illustration.py      # illustrative ROI table
+jupyter lab notebooks/lgbm_vs_qra.ipynb # walkthrough of the comparison
 ```
 
-The project virtualenv includes **pyarrow**, which pandas needs to read `.parquet` files. Point the notebook kernel at `.venv/bin/python` (or `.venv\Scripts\python.exe` on Windows).
+The processed panel is committed, so a fresh clone reproduces the comparison without downloading raw AEMO files. Docker, the panel rebuild, and every earlier experiment (conformal, QRA variants, spike stages, conformal predictive systems) are documented in **[docs/technical_notes.md](docs/technical_notes.md)**.
 
-## Forecast experiment
+Test status on this branch is 81 passed and 1 known failure. The failure, `test_windows_absolute_path_is_not_joined_to_the_repo`, happens because the checkout path contains "math5001" and is unrelated to the models.
 
-The forecast is 5-minute-ahead MCP. The origin is the end of the previous dispatch interval. `scripts/forecast_design.py` reindexes to a complete 5-minute grid before lagging, and it does not use same-interval demand, DPV, SCADA, RTP, or FCAS.
+## Repository map
 
-Frozen periods:
-
-| Split | End |
-| --- | --- |
-| Train | 2025-09-30 23:55 |
-| Calibration | 2026-03-31 23:55 |
-| Test | after the calibration end, untouched by tuning |
-
-```bash
-python -m unittest tests/test_forecast_design.py tests/test_point_models.py tests/test_conformal.py tests/test_qra.py tests/test_qra_variants.py
-python scripts/experiment.py
 ```
-
-Tables are written to `reports/forecast/`. Hyperparameters and the conformal window are chosen on pre-test data only. The LightGBM forecast is the 5-minute lag plus a price change fit under MAE. Conformal coverage, width, pinball and CRPS are reported for the test period and split by month and by tails defined from training quantiles of MCP. Contemporaneous STEM is an explicit day-ahead assumption, not a verified publication timestamp.
-
-Quantile regression averaging is a comparison, not a replacement for the absolute-residual conformal intervals. `scripts/qra.py` implements standard QRA (Nowotarski and Weron, 2015): one linear quantile regression of MCP on a pool of point forecasts. By default those are the 5-minute, 30-minute and 1-day persistence forecasts, the ridge forecast, and the LightGBM forecast. Those are the same origins and the same 5-minute horizon as the conformal experiment. The fit does not see the test set. Test scores are written to `reports/forecast/qra_test.csv`, `qra_by_month.csv`, `qra_regime.csv`, and `qra_crps.csv`. `crps_empirical` is the sliding residual-sample CRPS and is only filled for the frozen conformal rows. `crps_quantile_integral` uses the same quantile grid for QRA and for the frozen conformal residual window; it is not the same estimator as `crps_empirical`.
-
-`python scripts/qra.py` does not refit LightGBM. It reloads `models/lgbm_5min_ahead.joblib`, refits ridge on the training window, recomputes persistence from lags, and reads the frozen conformal method and window from `reports/forecast/experiment_meta.json` without choosing them again. `python scripts/experiment.py` refits the point models, selects the conformal window on calibration, and then writes the same QRA tables.
-
-### QRA variants and recent calibration
-
-`scripts/qra_variants.py` compares the same ex-ante forecasts under three combiners from the electricity-price forecasting literature, plus a native LightGBM quantile forecast:
-
-| Combiner | What it does |
-| --- | --- |
-| `qra` | Standard QRA: QuantReg of MCP on the member point forecasts (Nowotarski and Weron, 2015) |
-| `qrm` | QuantReg of MCP on the mean of the member point forecasts (Marcjasz, Uniejewski and Weron, 2020) |
-| `qave` | Quantile averaging: each member first becomes a quantile forecast (univariate QuantReg of MCP on that point forecast, or native LightGBM quantiles), then the sorted member quantiles are averaged level by level |
-| `lightgbm_quantile` | LightGBM with the quantile objective, one model per level, fit on the training window only with the frozen point-model hyperparameters |
-
-Member subsets include all five forecasts, LightGBM only, LightGBM + 5-minute persistence, LightGBM + ridge + 5-minute persistence, and (for `qave`) those three plus native LightGBM quantiles. Each calibration-fitted variant is fit on the most recent 28, 56 or 91 days of available pre-test data, or on all of it. Selection uses only an inner split of calibration: windows end on 2026-02-28 23:55 and are scored on March 2026. Among variants with March 90% coverage in [0.88, 0.92], the narrowest mean 90% width is selected (ties: lower quantile-integral CRPS). The selected variant is refit with the same window length ending 2026-03-31 23:55 and scored once on test. Test outcomes are never used to fit, select, or shrink intervals. Tables: `reports/forecast/qra_variants_calib.csv`, `qra_variants_test.csv`, `qra_variants_by_month.csv`, `qra_variants_meta.json`.
-
-```bash
-python -m unittest tests/test_forecast_design.py tests/test_point_models.py tests/test_conformal.py tests/test_qra.py tests/test_qra_variants.py
-python scripts/qra_variants.py
+scripts/forecast_design.py     ex-ante features and frozen splits
+scripts/point_models.py        persistence, ridge, LightGBM point models
+scripts/qra.py, qra_variants.py   QRA benchmark and variants
+scripts/lgbm_vs_qra.py         LightGBM lag-feature quantile baseline vs QRA
+scripts/roi_illustration.py    illustrative demand-response value
+scripts/spike_*.py             spike classifier, hurdle forecaster, conformal predictive systems
+notebooks/lgbm_vs_qra.ipynb    comparison walkthrough
+reports/forecast/              every results table (CSV/JSON/MD)
+reports/figures/               figures (lgbm_vs_qra/, qra/, spike/, final/)
+docs/summary.md                one-page executive summary
+docs/technical_notes.md        full technical README
 ```
-
-Test results:
-
-- **Selected variant:** `qra:lgbm_p5@28d` covers 0.868 with width 16.7 at 90%, and scores 3.916 quantile-integral CRPS (`qra_variants_test.csv`). It under-covers on test, although it covered 0.915 in March.
-- **PR 1 QRA** (all five members, all calibration): 0.930, 26.1 and 3.921.
-- **Native LightGBM quantile:** 0.927, 34.3 and 3.744.
-
-`python scripts/qra_figures.py` draws these from the stored csvs into `reports/figures/qra/`, as PNG and PDF, without refitting:
-
-- coverage against width;
-- CRPS by variant;
-- the recency-window effect;
-- pinball loss by quantile level.
-
-The QRA rows are also in `reports/forecast/final_master_table.md`, marked † because their CRPS is the quantile integral, and in `docs/final_results_summary.md`.
-
-## Regime switch and spike next steps
-
-`python scripts/regime_switch.py` does not refit LightGBM. On late calibration it chooses a gate: persistence if the absolute 30-minute move is at least $32.48, otherwise the saved LightGBM forecast. The frozen 7-day absolute conformal fence is applied to that switched centre. Test scores are in `reports/forecast/regime_cps_comparison.csv`. The switch improves test MAE from 4.75 to 4.65 and empirical CRPS from 4.03 to 3.98, and it closes most of the tail gap to persistence. It is not an onset model.
-
-`docs/spike_forecast_next_steps.md` is the plan for the spike piece: pre-dispatch demand, projected DPV, outages known by the origin, and a Bureau forecast, then a hurdle or pinball model beside the current tree. Those series are not in the panel yet. QRA stays the blend benchmark, not the spike method.
-
-## Spike stage 1: external data and an onset model
-
-`data/external/` holds archived day-ahead weather forecasts (Open-Meteo, ECMWF and GFS) and an extract of AEMO WEM pre-dispatch runs. Each folder has a README with the URL, time zone and availability rule. `scripts/external_features.py` uses a value only if it was published by the forecast origin. `tests/test_external_features.py` checks that, including that changing anything published after the origin cannot change a feature. `scripts/spike_onset.py` fits a hurdle model on train, picks its cutoffs on calibration and scores test once. Results and caveats are in `docs/spike_stage1_results.md`.
-
-```bash
-python scripts/pull_open_meteo.py                  # weather (cached responses are reused)
-python scripts/pull_aemo_predispatch.py --pass 1   # slow: about 1 h for the even-hour runs
-python scripts/pull_aemo_predispatch.py --pass 2   # odd-hour runs (stage 1b), about 1 h
-python scripts/pull_aemo_predispatch.py --pass 3   # half-hour runs (stage 1c), about 1.5 h
-python scripts/pull_aemo_predispatch.py --consolidate
-python -m unittest tests/test_external_features.py
-python scripts/spike_onset.py
-```
-
-The onset model needs `remotezip` for the pre-dispatch pull only. Features are built from the committed `data/external/aemo_predispatch/predispatch_runs_first9h.parquet` (about 31 MB, all half-hourly runs), so a fresh clone reproduces the results without the pull; the per-day extracts are used only if that file is absent.
-
-## Spike forecaster
-
-The implemented spike forecaster is frozen in `configs/spike_forecaster.json`. It uses panel and price-path features and a HistGradientBoosting spike classifier, LightGBM quantile size models, a mixture around the regime switch, and the regime switch as the point forecast. For each target interval, at origin T − 5 min, it gives the point forecast, P(spike up), P(spike down), quantiles (q01 to q99) and a spike alert. See "Implemented spike forecaster" in `docs/spike_stage1_results.md`.
-
-```bash
-python scripts/spike_forecaster.py fit        # fit on train, cutoffs on calibration; saves models/spike_forecaster.joblib
-python scripts/spike_forecaster.py evaluate   # test-window forecasts and metrics; checks they reproduce the frozen row
-python scripts/spike_forecaster.py forecast --start "2026-08-17 00:00" --end "2026-08-18 07:55" --out forecasts.csv
-python scripts/spike_figures.py               # figures in reports/figures/spike/
-python -m pytest tests/test_spike_forecaster.py
-```
-
-If you still see `Missing optional dependency 'pyarrow'`, the notebook or terminal is using a different Python:
-
-```bash
-python -m pip install pyarrow
-```
-
-## Conformal predictive systems and final results
-
-- `python scripts/spike_cps.py` fits the CPS variants on the calibration window: split, Mondrian by spike risk (fixed and sliding) and PIT recalibration of the spike forecaster. It also fits isotonic recalibration of P(spike up). It then scores everything on calibration (cross-fitted) and on test, and writes `reports/forecast/final_cps_*.csv`.
-- `python scripts/final_report.py` builds `reports/forecast/final_master_table.{csv,md}` and the figures in `reports/figures/final/`.
-- Report-ready summary: `docs/final_results_summary.md`.
