@@ -58,5 +58,5 @@ for k,lab,fam in pts:
 ax.axhline(0.9,ls='--',color='k',lw=1); ax.set_xlabel('Mean width of 90% range ($/MWh), test'); ax.set_ylabel('90% coverage, test')
 ax.set_xlim(14,33); ax.set_ylim(0.85,0.945); ax.text(32.8,0.901,'target 0.90',fontsize=8,ha='right',va='bottom')
 ax.scatter([],[],color=CC,marker='s',edgecolor='k',label='CPS'); ax.scatter([],[],color=QC,marker='o',edgecolor='k',label='QRA family'); ax.legend(loc='lower right')
-ax.set_title('Coverage against width: the two main methods and three QRA variants'); fig.tight_layout(); fig.savefig(F+'v3_cps_qra_variants_coverage_width.png',dpi=200); plt.close(fig)
+ax.set_title('Coverage against width: the two main methods and two QRA variants'); fig.tight_layout(); fig.savefig(F+'v3_cps_qra_variants_coverage_width.png',dpi=200); plt.close(fig)
 print('ok')
