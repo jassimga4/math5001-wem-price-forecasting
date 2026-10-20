@@ -1,0 +1,19 @@
+{
+  "old_rule": "abs_30min_move_q90",
+  "old_threshold": 32.483,
+  "old_selection": "late calibration tail MAE, subject to late MAE within 1% of LightGBM",
+  "new_rule": "abs_30min_move_q95",
+  "new_feature": "move_30",
+  "new_threshold": 52.428000000000004,
+  "selection_window": "train inner validation 2025-07-01..2025-09-30; grid quantiles from first half, choice on second half",
+  "selection_cut": "2025-08-15 23:45:00",
+  "selection_lightgbm": "refit with frozen params on train before 2025-07-01 (reproduces stored inner MAE)",
+  "inner_lightgbm_mae": 10.007418101598473,
+  "selection_half_lightgbm_mae": 11.725157763244189,
+  "switch_share_cal_new": 0.024009008149321526,
+  "switch_share_cal_old": 0.06727484397961715,
+  "n_cal_residuals": 52397,
+  "n_test": 40127,
+  "n_onset": 403,
+  "old_rebuild_reproduces_stored_cps": true
+}

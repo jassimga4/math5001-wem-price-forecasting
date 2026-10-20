@@ -1,12 +1,12 @@
 {
   "fit_window": "2024-03-01 to train end; early stopping on 2025-07-01 onwards",
-  "train_spike": 170.318,
+  "train_spike": 170.31799999999987,
   "train_floor": -54.19,
   "price_path_near_band": {
     "near_up_train_q90": 143.11,
     "near_down_train_q10": -33.14
   },
-  "regime_rule": "abs_30min_move_q90",
+  "regime_rule": "abs_30min_move_q95",
   "selection": "calibration rows after the first conformal window; point: min tail MAE with overall MAE within 1% of the regime switch; mixture: min tail CRPS with overall CRPS within 1% of the regime switch; detection: max F1",
   "models": {
     "hurdle_panel": {
@@ -1179,7 +1179,7 @@
         "down": 634
       },
       "point_cutoffs": {
-        "up": 0.5,
+        "up": 0.8,
         "down": 0.1
       },
       "mixture_cutoffs": {
