@@ -64,7 +64,10 @@ def main():
     assert abs(inner_mae - stored_inner) < 1e-6, (inner_mae, stored_inner)
     rules, spike, floor, cut = train_rules(train, val)
     chosen, table, base = select_rule(val, rules, cut)
-    old = json.loads((OUT / "regime_cps_meta.json").read_text())
+    # The earlier calibration-chosen rule, kept here so this one-off comparison stays reproducible after
+    # scripts/regime_switch.py adopted the train-chosen rule (the stored CPS rows now use the new rule).
+    old = {"rule": "abs_30min_move_q90", "feature": "move_30", "threshold": 32.483,
+           "selection": "late calibration tail MAE, subject to late MAE within 1% of LightGBM"}
     old_rule = (old["rule"], old["feature"], old["threshold"], spike, floor)
 
     cal = forecasts(slice_split(ready, "calibration"), saved["bundle"], saved["features"])
@@ -80,9 +83,10 @@ def main():
         res[tag] = {"regime_test": rt, "crps": cps.crps(y, rt), "lo": lo, "hi": hi, "pit": cps.cdf(y, rt),
                     "is": interval_score(y, lo, hi), "switch_share_test": float(np.mean(mask_for(test, rule))),
                     "switch_share_cal": float(np.mean(mask_for(cal, rule)))}
-    # the "old" rebuild must reproduce the stored CPS
-    assert np.allclose(res["old"]["regime_test"], rows["regime"]) and np.allclose(res["old"]["lo"], rows["cps_split_lo"])
-    assert np.allclose(res["old"]["crps"], rows["cps_split_crps"])
+    # the "new" rebuild must reproduce the stored CPS (scripts/spike_cps.py after the switch); before the switch the
+    # "old" rebuild reproduced the stored CPS exactly (checked when this script was first run, commit c1f2da1)
+    assert np.allclose(res["new"]["regime_test"], rows["regime"]) and np.allclose(res["new"]["lo"], rows["cps_split_lo"])
+    assert np.allclose(res["new"]["crps"], rows["cps_split_crps"])
     q = pd.read_parquet(OUT / "qra_test_forecasts.parquet")
     y = test["y"].to_numpy(); a = 0.1
     q_is = interval_score(y, q["q0.050"].to_numpy(), q["q0.950"].to_numpy())

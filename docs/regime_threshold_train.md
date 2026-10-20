@@ -91,3 +91,10 @@ If Jassim adopts the new threshold:
 - **CPS offsets** ("best guess minus 11.29 up to plus 12.53", the 3.4.1 text) and **the 28 April worked example** values (3.4.6) need recomputing from `regime_threshold_train_test_rows.parquet`. Not done here.
 - **The calibration cross-fit CPS numbers** in 3.4.5 (0.867 coverage, 25.52 width, 4.737 CRPS) need a rerun.
 - **All spike-forecaster and CPS-variant numbers** (see above), unless the report says they still use the old threshold.
+
+## Adopted (rerun of everything downstream)
+The train-chosen rule (30-minute move >= 52.428) is now the project's regime switch:
+- `scripts/regime_switch.py` chooses it inside train and writes `regime_cps_meta.json`;
+- `configs/spike_forecaster.json` uses it; `scripts/spike_onset.py`, `scripts/spike_forecaster.py fit/evaluate`, `scripts/spike_cps.py --rebuild`, `scripts/final_report.py` and `scripts/spike_figures.py` were rerun. The spike forecaster's calibration-chosen cutoffs came out unchanged (mixture 0.0025/0.2, alert 0.24);
+- `scripts/cps_qra_comparison.py` writes the CPS-vs-QRA table, the 90% block-bootstrap intervals (CRPS, interval score, coverage, width) and the derived report numbers (`cps_qra_numbers.json`).
+Docs written before this change (for example `docs/final_results_summary.md`, `docs/spike_stage1_results.md`) quote numbers from the earlier calibration-chosen threshold.

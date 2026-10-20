@@ -1,6 +1,9 @@
 """Regime switch between LightGBM and 5-minute persistence.
 
-The gate is chosen on calibration only. Ordinary origins use the saved LightGBM
+The gate is chosen inside train only: the same grid and criterion, applied to the inner
+validation window (2025-07-01 to 2025-09-30) with LightGBM refit on train before that
+window (scripts/regime_threshold_train.py). Calibration is left for the conformal
+residuals. Ordinary origins use the saved LightGBM
 forecast. Violent origins use persistence. The frozen 7-day absolute conformal
 fence is then drawn around whichever centre was issued. The test set is not
 read until the rule is frozen.
@@ -147,8 +150,13 @@ def main():
     train = slice_split(ready, "train")
     calibration = forecasts(slice_split(ready, "calibration"), saved["bundle"], saved["features"])
     test = forecasts(slice_split(ready, "test"), saved["bundle"], saved["features"])
-    rules, spike, floor, cut = candidate_rules(train, calibration)
-    chosen, selection, base_mae = select_rule(calibration, rules, cut)
+    from scripts.forecast_design import INNER_VAL_START
+    from scripts.regime_threshold_train import inner_lightgbm, train_rules
+    inner, feats, stored_inner = inner_lightgbm(train, saved)
+    val = forecasts(train.loc[train.index >= INNER_VAL_START], inner, feats)
+    assert abs(float(np.mean(np.abs(val["y"] - val["lightgbm"]))) - stored_inner) < 1e-6
+    rules, spike, floor, cut = train_rules(train, val)
+    chosen, selection, base_mae = select_rule(val, rules, cut)
     test_switch = mask_for(test, chosen)
     yhat_cal = switched(calibration, mask_for(calibration, chosen))
     yhat_test = switched(test, test_switch)
@@ -172,14 +180,16 @@ def main():
         "train_spike": spike,
         "train_floor": floor,
         "late_lightgbm_mae": base_mae,
-        "selection": "late calibration tail MAE, subject to late MAE within 1% of LightGBM",
+        "selection": "train inner-validation window 2025-07-01..2025-09-30: grid from first half, lowest second-half tail MAE subject to MAE within 1% of LightGBM (fallback: lowest tail MAE if none qualifies)",
+        "selection_cut": str(cut),
+        "fallback_used": bool((selection["late_mae"] <= base_mae * 1.01).sum() == 0),
         "window_steps": WINDOW,
         "method": "absolute",
         "alpha": ALPHA,
         "test_switch_share": float(np.mean(test_switch)),
         "n_test": int(len(test)),
         "n_test_tail": int(tail.sum()),
-        "note": "Gate chosen on calibration only. Not an onset model. See docs/spike_forecast_next_steps.md.",
+        "note": "Gate chosen inside train only. Not an onset model. See docs/spike_forecast_next_steps.md.",
     }
     (OUT / "regime_cps_meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     print(selection.to_string(index=False))
